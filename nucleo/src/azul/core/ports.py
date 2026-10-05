@@ -66,12 +66,21 @@ class BrainRequest:
     tools: list[ToolSpec] = field(default_factory=list)
 
 
-# El cerebro emite trozos de texto a medida que responde, y consumos con costo.
-BrainEvent = str | Usage
+@dataclass(frozen=True)
+class Searching:
+    """El cerebro empezó a buscar en internet (para avisar y no dejar silencio)."""
+
+
+# El cerebro emite trozos de texto a medida que responde, avisos y consumos con costo.
+BrainEvent = str | Searching | Usage
 
 
 class BrainError(Exception):
     """Fallo del cerebro, con un mensaje apto para mostrar al usuario."""
+
+
+class VoiceError(Exception):
+    """Fallo del oído o la voz, con un mensaje apto para mostrar al usuario."""
 
 
 @dataclass(frozen=True)
@@ -85,17 +94,21 @@ class Brain(Protocol):
 
     def respond(self, request: BrainRequest) -> AsyncIterator[BrainEvent]: ...
 
+    async def prewarm(self, request: BrainRequest) -> Usage | None:
+        """Prepara la caché del proveedor para que la próxima respuesta empiece antes."""
+        ...
+
 
 class SpeechToText(Protocol):
-    """El oído: convierte audio en vivo en texto."""
+    """El oído: convierte audio en vivo (PCM 16 bits, mono) en texto."""
 
-    def transcribe(self, audio: AsyncIterator[bytes]) -> AsyncIterator[Transcript]: ...
+    def transcribe(self, audio: AsyncIterator[bytes]) -> AsyncIterator[Transcript | Usage]: ...
 
 
 class TextToSpeech(Protocol):
-    """La voz: convierte texto en audio."""
+    """La voz: convierte texto en audio (MP3)."""
 
-    def synthesize(self, text: str) -> AsyncIterator[bytes]: ...
+    def synthesize(self, text: str) -> AsyncIterator[bytes | Usage]: ...
 
 
 class MemoryStore(Protocol):

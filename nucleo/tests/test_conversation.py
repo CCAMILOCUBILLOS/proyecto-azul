@@ -3,8 +3,14 @@ from datetime import datetime
 import pytest
 
 from azul.adapters.sqlite_store import SqliteStore
-from azul.core.conversation import BudgetNotice, Conversation, ErrorNotice, TextChunk
-from azul.core.ports import Effort, Fact, Message, Usage
+from azul.core.conversation import (
+    BudgetNotice,
+    Conversation,
+    ErrorNotice,
+    SearchNotice,
+    TextChunk,
+)
+from azul.core.ports import Effort, Fact, Message, Searching, Usage
 from tests.fakes import FakeBrain
 
 pytestmark = pytest.mark.anyio
@@ -126,3 +132,60 @@ async def test_blocks_when_budget_is_exhausted(store):
     assert events == [BudgetNotice("blocked", 50.0, 50.0)]
     assert brain.requests == []
     assert await store.recent_messages(10) == []
+
+
+async def test_search_notice_is_given_once(store):
+    brain = FakeBrain([Searching(), Searching(), "Hace sol."])
+
+    events = await collect(make_conversation(brain, store), "¿y el clima?")
+
+    assert events == [SearchNotice(), TextChunk("Hace sol.")]
+
+
+async def test_prewarm_only_when_cache_has_probably_expired(store):
+    now = [1000.0]
+    brain = FakeBrain(["ok"])
+    conversation = Conversation(
+        brain,
+        memory=store,
+        meter=store,
+        monthly_budget_usd=50,
+        budget_warning_usd=40,
+        clock=lambda: now[0],
+    )
+
+    await conversation.prewarm()  # primera vez: no hay caché
+    now[0] += 60
+    await conversation.prewarm()  # hace un minuto: sigue en caché
+    await collect(conversation, "hola")
+    now[0] += 120
+    await conversation.prewarm()  # hubo respuesta hace dos minutos
+    now[0] += 300
+    await conversation.prewarm()  # más de 4 minutos sin actividad
+
+    assert len(brain.prewarms) == 2
+    assert await store.month_total_usd() == pytest.approx(0.002)
+
+
+async def test_prewarm_uses_the_same_history_prefix_as_the_next_reply(store):
+    await store.add_message(Message("user", "hola"))
+    await store.add_message(Message("assistant", "¡Hola!"))
+    brain = FakeBrain(["ok"])
+    conversation = make_conversation(brain, store)
+
+    await conversation.prewarm()
+    await collect(conversation, "¿qué tal?")
+
+    warmed = [m.text for m in brain.prewarms[0].messages]
+    sent = [m.text for m in brain.requests[0].messages]
+    assert sent[: len(warmed)] == warmed
+    assert brain.prewarms[0].system == brain.requests[0].system
+
+
+async def test_prewarm_skipped_when_budget_is_exhausted(store):
+    await store.record(Usage("anthropic", 50.0))
+    brain = FakeBrain()
+
+    await make_conversation(brain, store).prewarm()
+
+    assert brain.prewarms == []

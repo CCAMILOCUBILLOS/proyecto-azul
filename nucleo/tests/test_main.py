@@ -3,9 +3,9 @@ import json
 from fastapi.testclient import TestClient
 
 from azul import __version__
-from azul.core.ports import Usage
+from azul.core.ports import Transcript, Usage
 from azul.main import create_app
-from tests.fakes import FakeBrain
+from tests.fakes import FakeBrain, FakeSpeechToText, FakeTextToSpeech
 
 
 def events_of(response):
@@ -79,3 +79,73 @@ def test_chat_rejects_empty_text(settings):
     client = TestClient(create_app(settings, brain=FakeBrain()))
 
     assert client.post("/api/chat", json={"texto": "   "}).status_code == 422
+
+
+def receive_until_end(socket):
+    """Recibe eventos de voz hasta "fin"; el audio llega como binario."""
+    received = []
+    while True:
+        message = socket.receive()
+        if message.get("bytes") is not None:
+            received.append(message["bytes"])
+            continue
+        event = json.loads(message["text"])
+        received.append(event)
+        if event["tipo"] == "fin":
+            return received
+
+
+def test_voice_turn_over_websocket(settings):
+    stt = FakeSpeechToText([Transcript("¿Cómo estás?", True)])
+    tts = FakeTextToSpeech()
+    app = create_app(settings, brain=FakeBrain(["¡Muy bien! ", "¿Y tú?"]), stt=stt, tts=tts)
+
+    with TestClient(app).websocket_connect("/api/voz") as socket:
+        socket.send_json({"tipo": "hablar_inicio"})
+        socket.send_bytes(b"pcm-1")
+        socket.send_bytes(b"pcm-2")
+        socket.send_json({"tipo": "hablar_fin"})
+        received = receive_until_end(socket)
+
+    assert stt.received == [b"pcm-1", b"pcm-2"]
+    assert {"tipo": "escuchado", "texto": "¿Cómo estás?", "final": True} in received
+    assert {"tipo": "texto", "texto": "¡Muy bien! "} in received
+    assert [r for r in received if isinstance(r, bytes)] == [
+        b"<\xc2\xa1Muy bien!>",
+        b"<\xc2\xbfY t\xc3\xba?>",
+    ]
+
+
+def test_voice_stop_command_over_websocket(settings):
+    stt = FakeSpeechToText([Transcript("Para.", True)])
+    brain = FakeBrain(["no"])
+    app = create_app(settings, brain=brain, stt=stt, tts=FakeTextToSpeech())
+
+    with TestClient(app).websocket_connect("/api/voz") as socket:
+        socket.send_json({"tipo": "hablar_inicio"})
+        socket.send_json({"tipo": "hablar_fin"})
+        received = receive_until_end(socket)
+
+    assert {"tipo": "parado"} in received
+    assert brain.requests == []
+
+
+def test_voice_without_deepgram_key_explains_what_to_do(settings):
+    app = create_app(settings, brain=FakeBrain())
+
+    with TestClient(app).websocket_connect("/api/voz") as socket:
+        socket.send_json({"tipo": "hablar_inicio"})
+        socket.send_json({"tipo": "hablar_fin"})
+        received = receive_until_end(socket)
+
+    assert received[0] == {"tipo": "turno"}
+    assert received[1]["tipo"] == "error"
+    assert "DEEPGRAM_API_KEY" in received[1]["mensaje"]
+
+
+def test_precalentar_endpoint(settings):
+    brain = FakeBrain()
+    client = TestClient(create_app(settings, brain=brain))
+
+    assert client.post("/api/precalentar").status_code == 204
+    assert len(brain.prewarms) == 1

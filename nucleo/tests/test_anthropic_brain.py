@@ -12,7 +12,7 @@ from azul.adapters.anthropic_brain import (
     UnconfiguredBrain,
     cost_usd,
 )
-from azul.core.ports import BrainError, BrainRequest, Effort, Message, ToolSpec, Usage
+from azul.core.ports import BrainError, BrainRequest, Effort, Message, Searching, ToolSpec, Usage
 from tests.fakes import fake_anthropic_client, final_message, tool_use, usage
 
 pytestmark = pytest.mark.anyio
@@ -182,3 +182,44 @@ def test_unknown_model_is_priced_conservatively():
     unknown = cost_usd("modelo-nuevo", usage())
 
     assert unknown >= known
+
+
+async def test_announces_web_search():
+    from tests.fakes import search_started_event
+
+    brain, _ = make_brain([([search_started_event(), "Hace sol."], final_message())])
+
+    events = await collect(brain, make_request())
+
+    assert isinstance(events[0], Searching)
+    assert events[1] == "Hace sol."
+
+
+async def test_prewarm_writes_cache_without_generating():
+    client = fake_anthropic_client([])
+    brain = AnthropicBrain(client, model="claude-opus-5-5")
+
+    usage_event = await brain.prewarm(make_request())
+
+    call = client.beta.messages.create_calls[0]
+    assert call["max_tokens"] == 0
+    assert "cache_control" not in call
+    assert "fallbacks" not in call
+    assert call["betas"] == [PER_MESSAGE_EFFORT_BETA]
+    assert call["output_config"] == {"effort": "medium"}
+    # La caché se marca en el último mensaje compartido con la próxima solicitud.
+    assert call["messages"][-2] == {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "¿qué tal el clima?", "cache_control": {"type": "ephemeral"}}
+        ],
+    }
+    assert call["messages"][-1]["role"] == "user"
+    assert usage_event.cost_usd == pytest.approx(3000 * 5 / 1_000_000 + 1000 * 4 / 1_000_000)
+
+
+async def test_prewarm_failure_is_not_fatal():
+    error = anthropic.APIConnectionError(request=httpx2.Request("POST", "https://api.example"))
+    brain = AnthropicBrain(fake_anthropic_client([], created=error), model="claude-opus-5-5")
+
+    assert await brain.prewarm(make_request()) is None

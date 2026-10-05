@@ -1,4 +1,5 @@
 import "./style.css";
+import { Voz, type EventoVoz } from "./voz";
 
 type Rol = "user" | "assistant";
 
@@ -14,11 +15,7 @@ interface Gasto {
   aviso: number;
 }
 
-type Evento =
-  | { tipo: "texto"; texto: string }
-  | { tipo: "gasto"; nivel: "aviso" | "bloqueo"; gastado: number; limite: number }
-  | { tipo: "error"; mensaje: string }
-  | { tipo: "fin" };
+type EventoChat = Extract<EventoVoz, { tipo: "texto" | "buscando" | "gasto" | "error" | "fin" }>;
 
 const estado = elemento<HTMLParagraphElement>("#estado");
 const conversacion = elemento<HTMLElement>("#conversacion");
@@ -26,8 +23,14 @@ const formulario = elemento<HTMLFormElement>("#formulario");
 const texto = elemento<HTMLTextAreaElement>("#texto");
 const botonEnviar = elemento<HTMLButtonElement>("#enviar");
 const botonParar = elemento<HTMLButtonElement>("#parar");
+const botonMicrofono = elemento<HTMLButtonElement>("#microfono");
 
 let respuestaEnCurso: AbortController | null = null;
+let respondiendoPorVoz = false;
+let burbujaEscuchada: HTMLDivElement | null = null;
+let burbujaVoz: HTMLDivElement | null = null;
+
+const voz = new Voz(alEventoDeVoz, () => actualizarBotones());
 
 function elemento<T extends Element>(selector: string): T {
   const encontrado = document.querySelector<T>(selector);
@@ -51,6 +54,14 @@ function bajarAlFinal(): void {
 function dinero(valor: number): string {
   return `$${valor.toFixed(2)}`;
 }
+
+function avisoDeGasto(evento: Extract<EventoVoz, { tipo: "gasto" }>): string {
+  return evento.nivel === "bloqueo"
+    ? `Llegaste al límite de ${dinero(evento.limite)} de este mes. Azul queda en pausa hasta el próximo mes.`
+    : `Ojo: llevas ${dinero(evento.gastado)} de ${dinero(evento.limite)} este mes.`;
+}
+
+// --- Estado y gasto ---
 
 async function actualizarGasto(): Promise<void> {
   try {
@@ -76,22 +87,30 @@ async function cargarHistorial(): Promise<void> {
   }
 }
 
-function mostrarEvento(evento: Evento, burbuja: HTMLDivElement): void {
+function actualizarBotones(): void {
+  const ocupado = respuestaEnCurso !== null || respondiendoPorVoz || voz.sonando;
+  botonEnviar.hidden = ocupado;
+  botonParar.hidden = !ocupado;
+  texto.disabled = respuestaEnCurso !== null;
+}
+
+// --- Chat de texto ---
+
+function mostrarEventoDeChat(evento: EventoChat, burbuja: HTMLDivElement): void {
   switch (evento.tipo) {
     case "texto":
+      burbuja.classList.remove("pensando", "buscando");
       burbuja.textContent += evento.texto;
       bajarAlFinal();
+      break;
+    case "buscando":
+      burbuja.classList.add("buscando");
       break;
     case "error":
       agregarBurbuja("aviso", evento.mensaje);
       break;
     case "gasto":
-      agregarBurbuja(
-        "aviso",
-        evento.nivel === "bloqueo"
-          ? `Llegaste al límite de ${dinero(evento.limite)} de este mes. Azul queda en pausa hasta el próximo mes.`
-          : `Ojo: llevas ${dinero(evento.gastado)} de ${dinero(evento.limite)} este mes.`,
-      );
+      agregarBurbuja("aviso", avisoDeGasto(evento));
       break;
     case "fin":
       break;
@@ -99,11 +118,12 @@ function mostrarEvento(evento: Evento, burbuja: HTMLDivElement): void {
 }
 
 async function enviar(mensaje: string): Promise<void> {
+  voz.parar();
   agregarBurbuja("user", mensaje);
   const burbuja = agregarBurbuja("assistant");
   burbuja.classList.add("pensando");
   respuestaEnCurso = new AbortController();
-  modoRespondiendo(true);
+  actualizarBotones();
 
   try {
     const respuesta = await fetch("/api/chat", {
@@ -123,9 +143,7 @@ async function enviar(mensaje: string): Promise<void> {
       const lineas = pendiente.split("\n");
       pendiente = lineas.pop() ?? "";
       for (const linea of lineas) {
-        if (!linea.trim()) continue;
-        burbuja.classList.remove("pensando");
-        mostrarEvento(JSON.parse(linea) as Evento, burbuja);
+        if (linea.trim()) mostrarEventoDeChat(JSON.parse(linea) as EventoChat, burbuja);
       }
     }
   } catch (error) {
@@ -135,20 +153,104 @@ async function enviar(mensaje: string): Promise<void> {
       agregarBurbuja("aviso", "Se perdió la conexión con Azul. Intenta de nuevo.");
     }
   } finally {
-    burbuja.classList.remove("pensando");
+    burbuja.classList.remove("pensando", "buscando");
     if (!burbuja.textContent) burbuja.remove();
     respuestaEnCurso = null;
-    modoRespondiendo(false);
+    actualizarBotones();
+    texto.focus();
     void actualizarGasto();
   }
 }
 
-function modoRespondiendo(activo: boolean): void {
-  botonEnviar.hidden = activo;
-  botonParar.hidden = !activo;
-  texto.disabled = activo;
-  if (!activo) texto.focus();
+// --- Voz ---
+
+function alEventoDeVoz(evento: EventoVoz): void {
+  switch (evento.tipo) {
+    case "turno":
+      respondiendoPorVoz = true;
+      burbujaEscuchada = agregarBurbuja("user");
+      burbujaEscuchada.classList.add("escuchando");
+      burbujaVoz = null;
+      break;
+    case "escuchado":
+      if (burbujaEscuchada) {
+        burbujaEscuchada.textContent = evento.texto;
+        if (evento.final) burbujaEscuchada.classList.remove("escuchando");
+      }
+      break;
+    case "nada_escuchado":
+      burbujaEscuchada?.remove();
+      agregarBurbuja("aviso", "No te escuché. Mantén presionado el micrófono mientras hablas.");
+      break;
+    case "texto":
+    case "buscando":
+      burbujaVoz ??= agregarBurbuja("assistant");
+      mostrarEventoDeChat(evento, burbujaVoz);
+      break;
+    case "gasto":
+    case "error":
+      if (burbujaEscuchada && !burbujaEscuchada.textContent) burbujaEscuchada.remove();
+      mostrarEventoDeChat(evento, burbujaVoz ?? agregarBurbuja("aviso"));
+      break;
+    case "parado":
+      burbujaVoz?.classList.add("interrumpida");
+      burbujaVoz?.classList.remove("buscando");
+      respondiendoPorVoz = false;
+      break;
+    case "fin":
+      burbujaEscuchada?.classList.remove("escuchando");
+      burbujaVoz?.classList.remove("buscando");
+      respondiendoPorVoz = false;
+      void actualizarGasto();
+      break;
+  }
+  actualizarBotones();
 }
+
+async function empezarAHablar(): Promise<void> {
+  botonMicrofono.classList.add("activo");
+  try {
+    await voz.empezar();
+    // Si el usuario soltó el botón mientras se preparaba el micrófono, se termina ya.
+    if (!botonMicrofono.classList.contains("activo")) voz.terminar();
+  } catch (error) {
+    botonMicrofono.classList.remove("activo");
+    const permisoNegado = error instanceof DOMException && error.name === "NotAllowedError";
+    agregarBurbuja(
+      "aviso",
+      permisoNegado
+        ? "Necesito permiso para usar el micrófono. Actívalo en la configuración del navegador."
+        : "No pude activar el micrófono ni conectarme con Azul.",
+    );
+  }
+}
+
+function dejarDeHablar(): void {
+  if (!botonMicrofono.classList.contains("activo")) return;
+  botonMicrofono.classList.remove("activo");
+  voz.terminar();
+}
+
+botonMicrofono.addEventListener("pointerdown", (evento) => {
+  evento.preventDefault();
+  botonMicrofono.setPointerCapture(evento.pointerId);
+  void empezarAHablar();
+});
+botonMicrofono.addEventListener("pointerup", dejarDeHablar);
+botonMicrofono.addEventListener("pointercancel", dejarDeHablar);
+// Accesible con teclado: mantener la barra espaciadora o Enter sobre el botón.
+botonMicrofono.addEventListener("keydown", (evento) => {
+  if ((evento.key === " " || evento.key === "Enter") && !evento.repeat) {
+    evento.preventDefault();
+    void empezarAHablar();
+  }
+});
+botonMicrofono.addEventListener("keyup", (evento) => {
+  if (evento.key === " " || evento.key === "Enter") dejarDeHablar();
+});
+botonMicrofono.addEventListener("contextmenu", (evento) => evento.preventDefault());
+
+// --- Formulario ---
 
 formulario.addEventListener("submit", (evento) => {
   evento.preventDefault();
@@ -166,7 +268,20 @@ texto.addEventListener("keydown", (evento) => {
   }
 });
 
-botonParar.addEventListener("click", () => respuestaEnCurso?.abort());
+// Al empezar a escribir, Azul prepara su caché (solo si hace falta) para responder antes.
+let ultimoPrecalentamiento = 0;
+texto.addEventListener("input", () => {
+  if (Date.now() - ultimoPrecalentamiento < 60_000) return;
+  ultimoPrecalentamiento = Date.now();
+  void fetch("/api/precalentar", { method: "POST" }).catch(() => undefined);
+});
+
+botonParar.addEventListener("click", () => {
+  respuestaEnCurso?.abort();
+  voz.parar();
+  respondiendoPorVoz = false;
+  actualizarBotones();
+});
 
 void cargarHistorial();
 void actualizarGasto();

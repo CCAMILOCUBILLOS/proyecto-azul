@@ -6,7 +6,15 @@ from typing import Any
 
 import anthropic
 
-from azul.core.ports import BrainError, BrainEvent, BrainRequest, Effort, ToolSpec, Usage
+from azul.core.ports import (
+    BrainError,
+    BrainEvent,
+    BrainRequest,
+    Effort,
+    Searching,
+    ToolSpec,
+    Usage,
+)
 
 log = logging.getLogger(__name__)
 
@@ -81,13 +89,16 @@ class AnthropicBrain:
             starting_round = True
             try:
                 async with self._client.beta.messages.stream(messages=messages, **params) as stream:
-                    async for text in stream.text_stream:
-                        # Separa el texto de una vuelta anterior (p. ej. "Déjame buscar…").
-                        if starting_round and streamed_text and text[:1] not in (" ", "\n"):
-                            yield " "
-                        starting_round = False
-                        streamed_text = True
-                        yield text
+                    async for event in stream:
+                        if event.type == "text":
+                            # Separa el texto de una vuelta anterior.
+                            if starting_round and streamed_text and event.text[:1] not in " \n":
+                                yield " "
+                            starting_round = False
+                            streamed_text = True
+                            yield event.text
+                        elif event.type == "content_block_start" and _is_search(event):
+                            yield Searching()
                     final = await stream.get_final_message()
             except anthropic.APIError as error:
                 raise _to_brain_error(error) from error
@@ -119,6 +130,48 @@ class AnthropicBrain:
             )
 
         log.warning("Se alcanzó el máximo de %d vueltas de herramientas", MAX_ROUNDS)
+
+    async def prewarm(self, request: BrainRequest) -> Usage | None:
+        """Escribe en caché las instrucciones y el historial antes de que llegue el mensaje.
+
+        Usa max_tokens=0: el proveedor solo procesa el prefijo, sin generar respuesta.
+        """
+        params = self._base_params(request)
+        # La caché se marca en lo compartido con la próxima solicitud real, no al final.
+        params.pop("cache_control")
+        params.pop("fallbacks", None)
+        betas = [beta for beta in params.pop("betas", []) if beta != FALLBACK_BETA]
+        if betas:
+            params["betas"] = betas
+        params["max_tokens"] = 0
+
+        history: list[dict[str, Any]] = [
+            {"role": message.role, "content": message.text} for message in request.messages
+        ]
+        if history:
+            last = history[-1]
+            history[-1] = {
+                "role": last["role"],
+                "content": [
+                    {
+                        "type": "text",
+                        "text": last["content"],
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            }
+        try:
+            response = await self._client.beta.messages.create(
+                messages=[*history, {"role": "user", "content": "precalentamiento"}], **params
+            )
+        except anthropic.APIError as error:
+            log.warning("No se pudo precalentar la caché: %s", error)
+            return None
+        return Usage(
+            provider="anthropic",
+            cost_usd=cost_usd(response.model, response.usage),
+            detail=f"{response.model} · precalentamiento",
+        )
 
     def _build_messages(self, request: BrainRequest) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = [
@@ -171,6 +224,11 @@ class AnthropicBrain:
         if betas:
             params["betas"] = betas
         return params
+
+
+def _is_search(event: Any) -> bool:
+    block = event.content_block
+    return block.type == "server_tool_use" and getattr(block, "name", "") == "web_search"
 
 
 def _tool_definition(tool: ToolSpec) -> dict[str, Any]:
@@ -228,3 +286,6 @@ class UnconfiguredBrain:
             "(ANTHROPIC_API_KEY=...) y reinicia Azul."
         )
         yield  # pragma: no cover - convierte la función en generador
+
+    async def prewarm(self, request: BrainRequest) -> Usage | None:
+        return None

@@ -22,8 +22,19 @@
       </main>
 
       <form id="formulario" class="entrada">
+        <button
+          type="button"
+          id="microfono"
+          class="microfono"
+          aria-label="Mantén presionado para hablar"
+          title="Mantén presionado para hablar"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z" />
+          </svg>
+        </button>
         <label for="texto" class="solo-lector">Escríbele a Azul</label>
-        <textarea id="texto" rows="1" placeholder="Escríbele a Azul…" autocomplete="off"></textarea>
+        <textarea id="texto" rows="1" placeholder="Escríbele o mantén 🎤" autocomplete="off"></textarea>
         <button type="submit" id="enviar">Enviar</button>
         <button type="button" id="parar" class="parar" hidden>Parar</button>
       </form>
