@@ -15,7 +15,7 @@
 | 6. Incremento 1: cerebro + memoria + gasto | ✅ Completado el 2026-10-05 |
 | 6. Incremento 2: voz | ✅ Completado el 2026-10-05 (probado por el usuario con su voz) |
 | 6. Incremento 3: celular | ✅ Completado el 2026-10-05 (probado por el usuario en su iPhone; ADR 0021) |
-| 6. Incremento 4: respaldo y validación final | ⏳ Pendiente |
+| 6. Incremento 4: respaldo y validación final | ✅ Respaldo completado (ADR 0022); validación del MVP más abajo |
 
 ## Incremento 1: lo que funciona
 - Chat de texto en la app web, con respuesta por partes y botón Parar.
@@ -58,8 +58,27 @@
 - App instalable en la pantalla de inicio del iPhone, con su ícono.
 - 95 pruebas automáticas.
 
+## Incremento 4: lo que funciona (ADR 0022)
+- Respaldo manual (`Respaldar Azul.cmd`) y automático diario, en `respaldos/` y en `OneDrive\Azul\respaldos`; se conservan 14.
+- Restauración segura (`Restaurar Azul.cmd`) con copia previa de la memoria actual.
+- 105 pruebas automáticas.
+
+## Validación del MVP v0.1 (ADR 0016)
+
+| # | Criterio | Estado |
+|---|---|---|
+| 1 | Desde iPhone y Android, incluso fuera de casa, hablarle y que responda por voz | ✅ iPhone, en Wi-Fi y con datos móviles (probado por el usuario). ⏳ Android: falta instalar Tailscale |
+| 2 | Empieza a responder en ~2–3 s | ⚠️ Parcial: texto 2–3 s; voz ~6 s desde que el usuario se calla; con búsqueda, 15–25 s con frases de espera |
+| 3 | Recuerda entre conversaciones de días distintos | ✅ La memoria persiste entre reinicios. ⏳ Confirmar mañana ("¿cómo me llamo?") |
+| 4 | "Azul, para" corta la respuesta de inmediato | ✅ 0,2 s, sin costo de IA; también el botón ■ |
+| 5 | Ver el gasto del mes y que el límite funcione | ✅ Visible en la app; aviso a 40 y bloqueo a 50 USD (cubierto por pruebas) |
+| 6 | Un respaldo restaurado conserva la memoria intacta | ✅ Verificado el 2026-10-05 con el respaldo de OneDrive |
+
+**MVP v0.1.0 marcado el 2026-10-05** con aprobación del usuario (etiqueta git `v0.1.0`).
+
 ## Próximos pasos
-- Incremento 4: respaldo y restauración de la memoria; validación final de los 6 criterios del MVP.
+- Confirmar los criterios pendientes (Android, memoria al día siguiente).
+- Mejoras de velocidad A y B (aprobadas).
 - El usuario debe evitar que el portátil se suspenda mientras está enchufado (configuración de energía de Windows; lo hace el usuario).
 - Mejoras de velocidad **aprobadas por el usuario el 2026-10-05**, para después del incremento 3:
   - A. Guardar datos sin una segunda vuelta al cerebro (~5 s menos al aprender algo).

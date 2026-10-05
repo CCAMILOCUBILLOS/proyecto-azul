@@ -4,6 +4,7 @@ Todo valor configurable vive aquí y se lee de variables de entorno o del archiv
 `.env` en la raíz del proyecto. Nunca se escriben claves en el código.
 """
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -55,11 +56,31 @@ class Settings(BaseSettings):
     monthly_budget_usd: float = Field(default=50.0, gt=0)
     budget_warning_usd: float = Field(default=40.0, gt=0)
 
+    # Respaldos de la memoria (ADR 0022): en el portátil y en OneDrive, por decisión
+    # del usuario. Sin OneDrive, solo en el portátil.
+    backup_dir: Path = REPO_ROOT / "respaldos"
+    backup_cloud_dir: Path | None = Field(default_factory=lambda: _onedrive_backup_dir())
+    backups_to_keep: int = Field(default=14, ge=1)
+
+    @property
+    def db_path(self) -> Path:
+        return self.data_dir / "azul.db"
+
+    @property
+    def backup_destinations(self) -> list[Path]:
+        return [self.backup_dir, *([self.backup_cloud_dir] if self.backup_cloud_dir else [])]
+
     @model_validator(mode="after")
     def _warning_below_budget(self) -> "Settings":
         if self.budget_warning_usd >= self.monthly_budget_usd:
             raise ValueError("budget_warning_usd debe ser menor que monthly_budget_usd")
         return self
+
+
+def _onedrive_backup_dir() -> Path | None:
+    # En Windows las variables de entorno no distinguen mayúsculas ("OneDrive").
+    onedrive = os.environ.get("ONEDRIVE")
+    return Path(onedrive) / "Azul" / "respaldos" if onedrive else None
 
 
 @lru_cache

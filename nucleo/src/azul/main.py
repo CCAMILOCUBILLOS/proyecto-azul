@@ -27,6 +27,7 @@ from azul.access import (
 from azul.adapters.anthropic_brain import AnthropicBrain, UnconfiguredBrain
 from azul.adapters.deepgram import DeepgramSpeechToText, DeepgramTextToSpeech, UnconfiguredVoice
 from azul.adapters.sqlite_store import SqliteStore
+from azul.backup import backup_if_due
 from azul.config import Settings, get_settings
 from azul.core.conversation import (
     BudgetNotice,
@@ -296,4 +297,12 @@ def run() -> None:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
     settings = get_settings()
+    try:
+        for path in backup_if_due(
+            settings.db_path, settings.backup_destinations, keep=settings.backups_to_keep
+        ):
+            log.info("Respaldo automático del día: %s", path)
+    except Exception:
+        # Un respaldo fallido no debe impedir que Azul arranque.
+        log.exception("No se pudo hacer el respaldo automático")
     uvicorn.run(create_app(settings), host=settings.host, port=settings.port)

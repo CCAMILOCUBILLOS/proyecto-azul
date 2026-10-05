@@ -38,4 +38,6 @@ def settings(tmp_path) -> Settings:
         _env_file=None,
         data_dir=tmp_path / "datos",
         app_dist_dir=tmp_path / "dist",
+        backup_dir=tmp_path / "respaldos",
+        backup_cloud_dir=tmp_path / "nube",
     )

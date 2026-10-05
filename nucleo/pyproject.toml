@@ -14,6 +14,8 @@ dependencies = [
 
 [project.scripts]
 azul = "azul.main:run"
+azul-respaldar = "azul.cli:respaldar"
+azul-restaurar = "azul.cli:restaurar"
 
 [build-system]
 requires = ["uv_build>=0.11.30,<0.12.0"]
