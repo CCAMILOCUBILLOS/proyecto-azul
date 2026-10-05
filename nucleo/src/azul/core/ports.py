@@ -87,6 +87,8 @@ class VoiceError(Exception):
 class Transcript:
     text: str
     is_final: bool
+    # El proveedor detectó que la persona dejó de hablar (silencio tras la frase).
+    ends_speech: bool = False
 
 
 class Brain(Protocol):

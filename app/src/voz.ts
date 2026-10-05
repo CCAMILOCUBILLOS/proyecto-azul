@@ -3,6 +3,7 @@
 
 export type EventoVoz =
   | { tipo: "turno" }
+  | { tipo: "escucha_terminada" }
   | { tipo: "escuchado"; texto: string; final: boolean }
   | { tipo: "texto"; texto: string }
   | { tipo: "buscando" }
@@ -40,7 +41,11 @@ export class Voz {
     return this.reproduciendo.size > 0;
   }
 
-  /** Se llama al presionar el botón: interrumpe a Azul y empieza a escuchar. */
+  get escuchando(): boolean {
+    return this.grabando;
+  }
+
+  /** Se llama al tocar el micrófono: interrumpe a Azul y empieza a escuchar. */
   async empezar(): Promise<void> {
     // El AudioContext debe crearse dentro del gesto del usuario (iPhone lo exige).
     const contexto = this.asegurarContexto();
@@ -54,7 +59,7 @@ export class Voz {
     this.grabando = true;
   }
 
-  /** Se llama al soltar el botón. */
+  /** Deja de escuchar: lo pide Azul al detectar silencio, o el usuario al tocar de nuevo. */
   terminar(): void {
     if (!this.grabando) return;
     this.enviarPendientes();
@@ -101,6 +106,8 @@ export class Voz {
         }
         const evento = JSON.parse(mensaje.data as string) as EventoVoz;
         if (evento.tipo === "turno") this.aceptarAudio = true;
+        // Azul detectó que terminaste de hablar: se apaga el micrófono.
+        if (evento.tipo === "escucha_terminada") this.terminar();
         this.alEvento(evento);
       };
     });

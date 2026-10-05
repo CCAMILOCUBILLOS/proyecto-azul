@@ -13,7 +13,7 @@
 | 4. MVP y hoja de ruta | ✅ Completada (ADR 0015–0017) |
 | 5. Esqueleto del repositorio | ✅ Completada (ADR 0018–0019) |
 | 6. Incremento 1: cerebro + memoria + gasto | ✅ Completado el 2026-10-05 |
-| 6. Incremento 2: voz | 🔄 Construido y probado con simulaciones; falta la clave de Deepgram, elegir la voz y la prueba real |
+| 6. Incremento 2: voz | ✅ Completado el 2026-10-05 (probado por el usuario con su voz) |
 | 6. Incrementos 3–4 (celular, respaldo) | ⏳ Pendientes |
 
 ## Incremento 1: lo que funciona
@@ -34,16 +34,27 @@
 | Guardar un dato (caché activa) | 5,7 s | 0,8 ¢ |
 | Pregunta tras aprender un dato (la caché se rehace) | 3,0 s | 3,8 ¢ |
 
-## Incremento 2: lo que ya está construido (ADR 0020)
-- Botón de micrófono (mantener para hablar) con transcripción en vivo.
-- Respuesta hablada frase por frase con Deepgram (Aura-2).
-- "Déjame buscarlo" al empezar una búsqueda web.
+## Incremento 2: lo que funciona (ADR 0011 modificada, 0020)
+- Micrófono de un solo botón: tocar para hablar; Azul detecta solo el final (1–1,5 s de silencio); el mismo botón lo calla.
+- Transcripción en vivo con Deepgram Nova-3 ("Azul" como palabra clave).
+- Respuesta hablada frase por frase con la voz **Gloria** (Aura-2, colombiana).
+- "Dame un segundo" si tarda más de 2,5 s; "Déjame buscarlo" al buscar en internet.
 - Precalentamiento de la caché mientras el usuario habla o escribe.
-- Interrupción con el micrófono o con Parar; orden de parada por voz.
-- 82 pruebas automáticas.
+- Orden de parada por voz ("para", "detente"…) sin consultar al cerebro.
+- 88 pruebas automáticas.
+
+### Pruebas reales (2026-10-05)
+| Caso | Resultado |
+|---|---|
+| Pregunta simple, fin detectado solo | Deja de escuchar a +1,5 s; texto a +3,5 s; voz a +6,1 s |
+| Pregunta con dato nuevo + búsqueda web | "Dame un segundo" a ~4–5 s; "Déjame buscarlo" a ~10 s; respuesta a ~15–25 s |
+| "Azul, para" | Se detiene en 0,2 s, sin costo de IA |
+| Prueba del usuario con su voz | Funciona bien |
 
 ## Próximos pasos
-- El usuario crea la cuenta de Deepgram y pega `DEEPGRAM_API_KEY` en `.env`.
-- Generar muestras de las voces en español para que el usuario elija (`AZUL_TTS_VOICE`).
-- Prueba real: voz sintética → Deepgram (oído) → Azul → voz, y luego la prueba del usuario con su micrófono.
-- Pendiente de optimización: la ventana del historial (40 mensajes) se corre en cada turno y rehace la caché de los mensajes; conviene moverla por bloques.
+- Incremento 3: acceso desde el celular (Tailscale, HTTPS, clave de la app, ícono PNG para iPhone).
+- Mejoras de velocidad **aprobadas por el usuario el 2026-10-05**, para después del incremento 3:
+  - A. Guardar datos sin una segunda vuelta al cerebro (~5 s menos al aprender algo).
+  - B. Clima con un servicio gratuito, Open-Meteo, sin cuenta (~10 s menos en preguntas del clima).
+- Descartada por ahora: bajar el silencio de fin a 0,8 s. Pendiente de evaluar: voz por streaming de Deepgram.
+- Optimización de costo: la ventana del historial (40 mensajes) se corre en cada turno y rehace la caché de los mensajes; conviene moverla por bloques.

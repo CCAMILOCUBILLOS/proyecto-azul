@@ -31,6 +31,10 @@ STT_USD_PER_MINUTE = 0.0048  # Nova-3, streaming, un idioma
 TTS_USD_PER_1K_CHARS = 0.030  # Aura-2
 TTS_MAX_CHARS = 2000  # límite por solicitud de Deepgram
 
+# Silencio que marca el final de lo que dice el usuario (ADR 0011).
+ENDPOINTING_MS = 1000
+UTTERANCE_END_MS = 1500
+
 
 class DeepgramSpeechToText:
     def __init__(self, api_key: str, *, model: str = "nova-3", language: str = "es", connect=None):
@@ -50,6 +54,11 @@ class DeepgramSpeechToText:
                 "punctuate": "true",
                 "smart_format": "true",
                 "interim_results": "true",
+                # Sin esto, "Azul" a veces se entiende como "Suele".
+                "keyterm": "Azul",
+                # Detección del final: 1 s de silencio tras la frase, con respaldo a 1,5 s.
+                "endpointing": ENDPOINTING_MS,
+                "utterance_end_ms": UTTERANCE_END_MS,
             }
         )
         sent_bytes = 0
@@ -101,13 +110,16 @@ class DeepgramSpeechToText:
 
 def _parse_result(raw: str | bytes) -> Transcript | None:
     message = json.loads(raw)
+    if message.get("type") == "UtteranceEnd":
+        return Transcript("", is_final=True, ends_speech=True)
     if message.get("type") != "Results":
         return None
     alternatives = message.get("channel", {}).get("alternatives") or [{}]
     text = alternatives[0].get("transcript", "").strip()
-    if not text:
+    ends_speech = bool(message.get("speech_final"))
+    if not text and not ends_speech:
         return None
-    return Transcript(text, is_final=bool(message.get("is_final")))
+    return Transcript(text, is_final=bool(message.get("is_final")), ends_speech=ends_speech)
 
 
 class DeepgramTextToSpeech:

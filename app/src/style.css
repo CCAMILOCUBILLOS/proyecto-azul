@@ -218,14 +218,31 @@ button.microfono svg {
   fill: var(--texto);
 }
 
-button.microfono.activo {
+button.microfono .icono-detener,
+button.microfono[data-estado="respondiendo"] .icono-microfono {
+  display: none;
+}
+
+button.microfono[data-estado="respondiendo"] .icono-detener {
+  display: block;
+}
+
+button.microfono[data-estado="escuchando"] {
   background: var(--acento);
   border-color: var(--acento);
   box-shadow: 0 0 0 4px rgb(61 139 255 / 35%);
 }
 
+button.microfono[data-estado="respondiendo"] {
+  border-color: var(--error);
+}
+
+button.microfono[data-estado="respondiendo"] svg {
+  fill: var(--error);
+}
+
 @media (prefers-reduced-motion: no-preference) {
-  button.microfono.activo {
+  button.microfono[data-estado="escuchando"] {
     animation: escucha 1.2s ease-in-out infinite;
   }
 }

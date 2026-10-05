@@ -80,7 +80,13 @@ async def test_stt_streams_audio_and_reports_transcripts_and_cost():
 
     url, headers = calls[0]
     assert url.startswith("wss://api.deepgram.com/v1/listen?")
-    for param in ("model=nova-3", "language=es", "encoding=linear16", "sample_rate=16000"):
+    for param in (
+        "model=nova-3",
+        "language=es",
+        "encoding=linear16",
+        "sample_rate=16000",
+        "keyterm=Azul",
+    ):
         assert param in url
     assert headers == {"Authorization": "Token clave"}
     assert socket.sent[:2] == [one_second, one_second]
@@ -141,3 +147,13 @@ async def test_tts_errors_are_user_friendly():
 async def test_unconfigured_voice_explains_missing_key():
     with pytest.raises(VoiceError, match="DEEPGRAM_API_KEY"):
         [item async for item in UnconfiguredVoice().synthesize("Hola")]
+
+
+def test_parses_end_of_speech_signals():
+    from azul.adapters.deepgram import _parse_result
+
+    speech_final = {**results("Hola, Azul.", True), "speech_final": True}
+
+    assert _parse_result(json.dumps(speech_final)) == Transcript("Hola, Azul.", True, True)
+    assert _parse_result(json.dumps({"type": "UtteranceEnd"})) == Transcript("", True, True)
+    assert _parse_result(json.dumps(results("", True))) is None

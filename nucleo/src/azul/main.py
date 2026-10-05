@@ -28,7 +28,15 @@ from azul.core.conversation import (
     TextChunk,
 )
 from azul.core.ports import Brain, SpeechToText, TextToSpeech
-from azul.core.voice import Heard, NothingHeard, Speech, Stopped, VoiceEvent, VoiceSession
+from azul.core.voice import (
+    Heard,
+    ListeningEnded,
+    NothingHeard,
+    Speech,
+    Stopped,
+    VoiceEvent,
+    VoiceSession,
+)
 
 log = logging.getLogger(__name__)
 
@@ -136,9 +144,11 @@ def create_app(
 async def _voice_connection(socket: WebSocket, voice: VoiceSession) -> None:
     """Protocolo de voz con la app.
 
-    La app envía {"tipo": "hablar_inicio"}, luego audio PCM en binario, luego
-    {"tipo": "hablar_fin"}; {"tipo": "parar"} interrumpe la respuesta. Azul
-    responde con eventos JSON y el audio de cada frase como MP3 en binario.
+    La app envía {"tipo": "hablar_inicio"} y luego audio PCM en binario. Azul
+    avisa {"tipo": "escucha_terminada"} cuando detecta que el usuario dejó de
+    hablar; la app también puede cortar antes con {"tipo": "hablar_fin"}.
+    {"tipo": "parar"} interrumpe la respuesta. Azul responde con eventos JSON
+    y el audio de cada frase como MP3 en binario.
     """
     await socket.accept()
     current: asyncio.Task[None] | None = None
@@ -229,6 +239,8 @@ def _voice_event_to_dict(event: VoiceEvent) -> dict[str, Any]:
             return {"tipo": "parado"}
         case NothingHeard():
             return {"tipo": "nada_escuchado"}
+        case ListeningEnded():
+            return {"tipo": "escucha_terminada"}
         case _:
             return _event_to_dict(event)
 

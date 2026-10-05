@@ -46,10 +46,10 @@ class Settings(BaseSettings):
     anthropic_per_message_effort: bool = True
     web_search_max_uses: int = Field(default=3, ge=0)
 
-    # Oído y voz (ADR 0006). La voz es provisional hasta que el usuario elija una.
+    # Oído y voz (ADR 0006). Voz elegida por el usuario el 2026-10-05: Gloria (colombiana).
     stt_model: str = "nova-3"
     stt_language: str = "es"
-    tts_voice: str = "aura-2-celeste-es"
+    tts_voice: str = "aura-2-gloria-es"
 
     # Control de gasto (R3).
     monthly_budget_usd: float = Field(default=50.0, gt=0)

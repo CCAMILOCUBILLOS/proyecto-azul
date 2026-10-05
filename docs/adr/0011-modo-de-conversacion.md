@@ -16,6 +16,7 @@ El usuario prefiere activar a Azul por voz, pero quiere llegar pronto al primer 
 
 ## Decisión
 - **MVP (v0.1):** tocar para hablar, más un chat de texto para pruebas. La comunicación entre la app y el núcleo va por WebSocket.
+  - **Modificada el 2026-10-05, a pedido del usuario:** primero fue "mantener presionado"; al usarlo, el usuario prefirió no sostener el botón. Ahora es **tocar una vez**: Azul detecta solo el final (1 s de silencio, con respaldo a 1,5 s, vía Deepgram) y **un solo botón** sirve para hablar, enviar antes de tiempo y callar a Azul. Si no se oye nada en 8 s, deja de escuchar; el máximo por intervención es de 60 s. El botón "Parar" queda solo para el chat de texto.
 - **v0.2:** la palabra de activación **"Oye Azul"**, detectada dentro del propio dispositivo. Funciona en el celular con la app abierta y la pantalla encendida, y en el portátil incluso en segundo plano.
 
 ## Consecuencias

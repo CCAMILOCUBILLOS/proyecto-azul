@@ -14,7 +14,7 @@ La voz en cadena (ADR 0004) necesita convertir voz a texto y texto a voz, en esp
 3. La voz del navegador: gratis, pero de baja calidad y poco fiable en iPhone.
 
 ## Decisión
-Opción 1.
+Opción 1. El 2026-10-05, tras escuchar 5 muestras, el usuario eligió la voz **Gloria** (`aura-2-gloria-es`, colombiana), configurable en `AZUL_TTS_VOICE`.
 
 ## Consecuencias
 - Pendiente verificar la calidad de las voces en español antes de construir sobre ellas.

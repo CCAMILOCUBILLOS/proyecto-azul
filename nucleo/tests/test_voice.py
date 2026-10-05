@@ -5,7 +5,16 @@ import pytest
 from azul.adapters.sqlite_store import SqliteStore
 from azul.core.conversation import Conversation, ErrorNotice, SearchNotice, TextChunk
 from azul.core.ports import Searching, Transcript, Usage
-from azul.core.voice import SEARCH_PHRASE, Heard, NothingHeard, Speech, Stopped, VoiceSession
+from azul.core.voice import (
+    FILLER_PHRASES,
+    SEARCH_PHRASE,
+    Heard,
+    ListeningEnded,
+    NothingHeard,
+    Speech,
+    Stopped,
+    VoiceSession,
+)
 from tests.fakes import FakeBrain, FakeSpeechToText, FakeTextToSpeech
 
 pytestmark = pytest.mark.anyio
@@ -16,11 +25,11 @@ def store(tmp_path):
     return SqliteStore(tmp_path / "azul.db")
 
 
-def make_session(store, brain, stt, tts=None):
+def make_session(store, brain, stt, tts=None, **options):
     conversation = Conversation(
         brain, memory=store, meter=store, monthly_budget_usd=50, budget_warning_usd=40
     )
-    return VoiceSession(conversation, stt, tts or FakeTextToSpeech(), meter=store)
+    return VoiceSession(conversation, stt, tts or FakeTextToSpeech(), meter=store, **options)
 
 
 async def audio(*chunks):
@@ -90,7 +99,7 @@ async def test_silence_reports_nothing_heard(store):
 
     events = await collect(make_session(store, brain, FakeSpeechToText([])))
 
-    assert events == [NothingHeard()]
+    assert events == [ListeningEnded(), NothingHeard()]
     assert brain.requests == []
 
 
@@ -133,3 +142,88 @@ async def test_interrupting_saves_partial_answer_and_stops_tasks(store):
     await events.aclose()  # el usuario tocó el botón de nuevo
 
     assert (await store.recent_messages(1))[0].text == "Empiezo a responder."
+
+
+async def test_says_something_short_if_the_answer_takes_long(store):
+    class ThoughtfulBrain(FakeBrain):
+        async def respond(self, request):
+            await asyncio.sleep(0.2)
+            yield "Listo, ya lo tengo."
+
+    tts = FakeTextToSpeech()
+    stt = FakeSpeechToText([Transcript("Piensa en algo", True)])
+
+    await collect(make_session(store, ThoughtfulBrain(), stt, tts, filler_seconds=0.05))
+
+    assert tts.sentences[0] in FILLER_PHRASES
+    assert tts.sentences[1:] == ["Listo, ya lo tengo."]
+
+
+async def test_no_filler_when_the_answer_is_quick(store):
+    tts = FakeTextToSpeech()
+    stt = FakeSpeechToText([Transcript("Hola", True)])
+
+    await collect(make_session(store, FakeBrain(["¡Hola!"]), stt, tts, filler_seconds=0.5))
+
+    assert tts.sentences == ["¡Hola!"]
+
+
+async def endless_audio():
+    """La app sigue enviando audio hasta que Azul diga que dejó de escuchar."""
+    while True:
+        yield b"pcm"
+        await asyncio.sleep(0.01)
+
+
+class StreamingSpeechToText:
+    """Oído simulado que transcribe mientras llega el audio, como Deepgram."""
+
+    def __init__(self, script):
+        self.script = list(script)
+        self.chunks = 0
+
+    async def transcribe(self, audio):
+        async for _chunk in audio:
+            self.chunks += 1
+            if self.script:
+                yield self.script.pop(0)
+        yield Usage("deepgram", 0.0001, "voz a texto")
+
+
+async def test_stops_listening_when_the_user_stops_talking(store):
+    stt = StreamingSpeechToText(
+        [
+            Transcript("¿Qué hora", False),
+            Transcript("¿Qué hora es?", True),
+            Transcript("", True, ends_speech=True),
+        ]
+    )
+    brain = FakeBrain(["Son las seis."])
+    session = make_session(store, brain, stt)
+
+    events = [event async for event in session.handle(endless_audio())]
+
+    assert events.index(ListeningEnded()) < events.index(Heard("¿Qué hora es?", is_final=True))
+    assert brain.requests[0].messages[-1].text == "¿Qué hora es?"
+    assert await store.month_total_usd() > 0  # el costo del oído se registró
+
+
+async def test_stops_listening_if_nothing_is_said(store):
+    stt = StreamingSpeechToText([])
+    session = make_session(store, FakeBrain(), stt, no_speech_seconds=0.05)
+
+    events = [event async for event in session.handle(endless_audio())]
+
+    assert events == [ListeningEnded(), NothingHeard()]
+
+
+async def test_ends_speech_before_any_words_keeps_listening(store):
+    stt = StreamingSpeechToText(
+        [Transcript("", True, ends_speech=True), Transcript("Hola", True, ends_speech=True)]
+    )
+    brain = FakeBrain(["¡Hola!"])
+
+    events = [event async for event in make_session(store, brain, stt).handle(endless_audio())]
+
+    assert Heard("Hola", is_final=True) in events
+    assert events.count(ListeningEnded()) == 1

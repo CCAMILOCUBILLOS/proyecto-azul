@@ -25,6 +25,8 @@ const botonEnviar = elemento<HTMLButtonElement>("#enviar");
 const botonParar = elemento<HTMLButtonElement>("#parar");
 const botonMicrofono = elemento<HTMLButtonElement>("#microfono");
 
+const placeholderNormal = texto.placeholder;
+
 let respuestaEnCurso: AbortController | null = null;
 let respondiendoPorVoz = false;
 let burbujaEscuchada: HTMLDivElement | null = null;
@@ -87,11 +89,33 @@ async function cargarHistorial(): Promise<void> {
   }
 }
 
+type EstadoMicrofono = "inactivo" | "escuchando" | "respondiendo";
+
+function estadoMicrofono(): EstadoMicrofono {
+  if (voz.escuchando) return "escuchando";
+  if (respondiendoPorVoz || voz.sonando) return "respondiendo";
+  return "inactivo";
+}
+
+const ETIQUETAS_MICROFONO: Record<EstadoMicrofono, string> = {
+  inactivo: "Toca para hablarle a Azul",
+  escuchando: "Te escucho. Toca para enviar ya",
+  respondiendo: "Toca para callar a Azul",
+};
+
 function actualizarBotones(): void {
-  const ocupado = respuestaEnCurso !== null || respondiendoPorVoz || voz.sonando;
-  botonEnviar.hidden = ocupado;
-  botonParar.hidden = !ocupado;
-  texto.disabled = respuestaEnCurso !== null;
+  // Parar es solo para el chat de texto; en la voz, el mismo micrófono detiene.
+  const escribiendoRespuesta = respuestaEnCurso !== null;
+  botonEnviar.hidden = escribiendoRespuesta;
+  botonParar.hidden = !escribiendoRespuesta;
+  texto.disabled = escribiendoRespuesta;
+
+  const estadoActual = estadoMicrofono();
+  botonMicrofono.dataset.estado = estadoActual;
+  botonMicrofono.setAttribute("aria-label", ETIQUETAS_MICROFONO[estadoActual]);
+  botonMicrofono.title = ETIQUETAS_MICROFONO[estadoActual];
+  texto.placeholder =
+    estadoActual === "escuchando" ? "Te escucho… cuando termines, Azul responde solo" : placeholderNormal;
 }
 
 // --- Chat de texto ---
@@ -167,7 +191,6 @@ async function enviar(mensaje: string): Promise<void> {
 function alEventoDeVoz(evento: EventoVoz): void {
   switch (evento.tipo) {
     case "turno":
-      respondiendoPorVoz = true;
       burbujaEscuchada = agregarBurbuja("user");
       burbujaEscuchada.classList.add("escuchando");
       burbujaVoz = null;
@@ -177,10 +200,21 @@ function alEventoDeVoz(evento: EventoVoz): void {
         burbujaEscuchada.textContent = evento.texto;
         if (evento.final) burbujaEscuchada.classList.remove("escuchando");
       }
+      if (evento.final) {
+        // Apenas termina de escuchar, Azul muestra que está pensando.
+        respondiendoPorVoz = true;
+        burbujaVoz = agregarBurbuja("assistant");
+        burbujaVoz.classList.add("pensando");
+      }
+      break;
+    case "escucha_terminada":
+      // Ya no escucha; mientras llega la respuesta, el botón sirve para callar a Azul.
+      respondiendoPorVoz = true;
       break;
     case "nada_escuchado":
+      respondiendoPorVoz = false;
       burbujaEscuchada?.remove();
-      agregarBurbuja("aviso", "No te escuché. Mantén presionado el micrófono mientras hablas.");
+      agregarBurbuja("aviso", "No te escuché. Toca el micrófono y habla cuando se ilumine.");
       break;
     case "texto":
     case "buscando":
@@ -190,31 +224,34 @@ function alEventoDeVoz(evento: EventoVoz): void {
     case "gasto":
     case "error":
       if (burbujaEscuchada && !burbujaEscuchada.textContent) burbujaEscuchada.remove();
-      mostrarEventoDeChat(evento, burbujaVoz ?? agregarBurbuja("aviso"));
+      agregarBurbuja("aviso", evento.tipo === "gasto" ? avisoDeGasto(evento) : evento.mensaje);
       break;
     case "parado":
-      burbujaVoz?.classList.add("interrumpida");
-      burbujaVoz?.classList.remove("buscando");
-      respondiendoPorVoz = false;
+      terminarBurbujaDeVoz(true);
+      void actualizarGasto();
       break;
     case "fin":
       burbujaEscuchada?.classList.remove("escuchando");
-      burbujaVoz?.classList.remove("buscando");
-      respondiendoPorVoz = false;
+      terminarBurbujaDeVoz(false);
       void actualizarGasto();
       break;
   }
   actualizarBotones();
 }
 
+function terminarBurbujaDeVoz(interrumpida: boolean): void {
+  respondiendoPorVoz = false;
+  if (!burbujaVoz) return;
+  burbujaVoz.classList.remove("pensando", "buscando");
+  if (!burbujaVoz.textContent) burbujaVoz.remove();
+  else if (interrumpida) burbujaVoz.classList.add("interrumpida");
+  burbujaVoz = null;
+}
+
 async function empezarAHablar(): Promise<void> {
-  botonMicrofono.classList.add("activo");
   try {
     await voz.empezar();
-    // Si el usuario soltó el botón mientras se preparaba el micrófono, se termina ya.
-    if (!botonMicrofono.classList.contains("activo")) voz.terminar();
   } catch (error) {
-    botonMicrofono.classList.remove("activo");
     const permisoNegado = error instanceof DOMException && error.name === "NotAllowedError";
     agregarBurbuja(
       "aviso",
@@ -223,32 +260,26 @@ async function empezarAHablar(): Promise<void> {
         : "No pude activar el micrófono ni conectarme con Azul.",
     );
   }
+  actualizarBotones();
 }
 
-function dejarDeHablar(): void {
-  if (!botonMicrofono.classList.contains("activo")) return;
-  botonMicrofono.classList.remove("activo");
-  voz.terminar();
-}
-
-botonMicrofono.addEventListener("pointerdown", (evento) => {
-  evento.preventDefault();
-  botonMicrofono.setPointerCapture(evento.pointerId);
-  void empezarAHablar();
-});
-botonMicrofono.addEventListener("pointerup", dejarDeHablar);
-botonMicrofono.addEventListener("pointercancel", dejarDeHablar);
-// Accesible con teclado: mantener la barra espaciadora o Enter sobre el botón.
-botonMicrofono.addEventListener("keydown", (evento) => {
-  if ((evento.key === " " || evento.key === "Enter") && !evento.repeat) {
-    evento.preventDefault();
-    void empezarAHablar();
+// Un solo botón (ADR 0011): toca para hablar; Azul detecta solo cuando terminas.
+// Mientras Azul escucha, tocar envía ya; mientras responde, tocar lo calla.
+botonMicrofono.addEventListener("click", () => {
+  switch (estadoMicrofono()) {
+    case "inactivo":
+      void empezarAHablar();
+      break;
+    case "escuchando":
+      voz.terminar();
+      break;
+    case "respondiendo":
+      voz.parar();
+      terminarBurbujaDeVoz(true);
+      break;
   }
+  actualizarBotones();
 });
-botonMicrofono.addEventListener("keyup", (evento) => {
-  if (evento.key === " " || evento.key === "Enter") dejarDeHablar();
-});
-botonMicrofono.addEventListener("contextmenu", (evento) => evento.preventDefault());
 
 // --- Formulario ---
 
@@ -276,10 +307,9 @@ texto.addEventListener("input", () => {
   void fetch("/api/precalentar", { method: "POST" }).catch(() => undefined);
 });
 
+botonParar.title = "Interrumpe la respuesta de Azul";
 botonParar.addEventListener("click", () => {
   respuestaEnCurso?.abort();
-  voz.parar();
-  respondiendoPorVoz = false;
   actualizarBotones();
 });
 
