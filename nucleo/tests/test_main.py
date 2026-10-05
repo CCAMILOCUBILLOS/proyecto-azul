@@ -8,12 +8,17 @@ from azul.main import create_app
 from tests.fakes import FakeBrain, FakeSpeechToText, FakeTextToSpeech
 
 
+def local_client(app):
+    """Cliente que llega desde el propio portátil (sin pasar por Tailscale)."""
+    return TestClient(app, client=("127.0.0.1", 50000))
+
+
 def events_of(response):
     return [json.loads(line) for line in response.text.splitlines() if line]
 
 
 def test_salud(settings):
-    client = TestClient(create_app(settings))
+    client = local_client(create_app(settings))
 
     response = client.get("/api/salud")
 
@@ -24,21 +29,21 @@ def test_salud(settings):
 def test_serves_web_app_when_built(settings):
     settings.app_dist_dir.mkdir(parents=True)
     (settings.app_dist_dir / "index.html").write_text("<h1>Azul</h1>", encoding="utf-8")
-    client = TestClient(create_app(settings))
+    client = local_client(create_app(settings))
 
     assert "Azul" in client.get("/").text
     assert client.get("/api/salud").status_code == 200
 
 
 def test_runs_without_web_app(settings):
-    client = TestClient(create_app(settings))
+    client = local_client(create_app(settings))
 
     assert client.get("/").status_code == 404
 
 
 def test_chat_streams_events_and_updates_history_and_spending(settings):
     brain = FakeBrain(["¡Hola!", " ¿Qué más?", Usage("anthropic", 0.012)])
-    client = TestClient(create_app(settings, brain=brain))
+    client = local_client(create_app(settings, brain=brain))
 
     response = client.post("/api/chat", json={"texto": "  hola  "})
 
@@ -56,7 +61,7 @@ def test_chat_streams_events_and_updates_history_and_spending(settings):
 
 
 def test_chat_reports_brain_errors(settings):
-    client = TestClient(create_app(settings, brain=FakeBrain(error="Sin conexión.")))
+    client = local_client(create_app(settings, brain=FakeBrain(error="Sin conexión.")))
 
     response = client.post("/api/chat", json={"texto": "hola"})
 
@@ -67,7 +72,7 @@ def test_chat_reports_brain_errors(settings):
 
 
 def test_chat_without_key_explains_what_to_do(settings):
-    client = TestClient(create_app(settings))
+    client = local_client(create_app(settings))
 
     events = events_of(client.post("/api/chat", json={"texto": "hola"}))
 
@@ -76,7 +81,7 @@ def test_chat_without_key_explains_what_to_do(settings):
 
 
 def test_chat_rejects_empty_text(settings):
-    client = TestClient(create_app(settings, brain=FakeBrain()))
+    client = local_client(create_app(settings, brain=FakeBrain()))
 
     assert client.post("/api/chat", json={"texto": "   "}).status_code == 422
 
@@ -100,7 +105,7 @@ def test_voice_turn_over_websocket(settings):
     tts = FakeTextToSpeech()
     app = create_app(settings, brain=FakeBrain(["¡Muy bien! ", "¿Y tú?"]), stt=stt, tts=tts)
 
-    with TestClient(app).websocket_connect("/api/voz") as socket:
+    with local_client(app).websocket_connect("/api/voz") as socket:
         socket.send_json({"tipo": "hablar_inicio"})
         socket.send_bytes(b"pcm-1")
         socket.send_bytes(b"pcm-2")
@@ -121,7 +126,7 @@ def test_voice_stop_command_over_websocket(settings):
     brain = FakeBrain(["no"])
     app = create_app(settings, brain=brain, stt=stt, tts=FakeTextToSpeech())
 
-    with TestClient(app).websocket_connect("/api/voz") as socket:
+    with local_client(app).websocket_connect("/api/voz") as socket:
         socket.send_json({"tipo": "hablar_inicio"})
         socket.send_json({"tipo": "hablar_fin"})
         received = receive_until_end(socket)
@@ -133,7 +138,7 @@ def test_voice_stop_command_over_websocket(settings):
 def test_voice_without_deepgram_key_explains_what_to_do(settings):
     app = create_app(settings, brain=FakeBrain())
 
-    with TestClient(app).websocket_connect("/api/voz") as socket:
+    with local_client(app).websocket_connect("/api/voz") as socket:
         socket.send_json({"tipo": "hablar_inicio"})
         socket.send_json({"tipo": "hablar_fin"})
         received = receive_until_end(socket)
@@ -145,7 +150,7 @@ def test_voice_without_deepgram_key_explains_what_to_do(settings):
 
 def test_precalentar_endpoint(settings):
     brain = FakeBrain()
-    client = TestClient(create_app(settings, brain=brain))
+    client = local_client(create_app(settings, brain=brain))
 
     assert client.post("/api/precalentar").status_code == 204
     assert len(brain.prewarms) == 1

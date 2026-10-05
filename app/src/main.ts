@@ -313,6 +313,66 @@ botonParar.addEventListener("click", () => {
   actualizarBotones();
 });
 
-void cargarHistorial();
-void actualizarGasto();
-texto.focus();
+// --- Clave de acceso (solo desde otros dispositivos, como el celular) ---
+
+const dialogoEntrada = elemento<HTMLDialogElement>("#entrada");
+const formularioClave = elemento<HTMLFormElement>("#formulario-clave");
+const campoClave = elemento<HTMLInputElement>("#clave");
+const errorClave = elemento<HTMLParagraphElement>("#error-clave");
+
+interface Sesion {
+  local: boolean;
+  autorizado: boolean;
+  clave_configurada: boolean;
+}
+
+function pedirClave(claveConfigurada: boolean): void {
+  errorClave.textContent = claveConfigurada
+    ? ""
+    : "Azul aún no tiene clave de acceso. Configúrala en el portátil (AZUL_ACCESS_KEY en .env).";
+  if (!dialogoEntrada.open) dialogoEntrada.showModal();
+  campoClave.focus();
+}
+
+formularioClave.addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  try {
+    const respuesta = await fetch("/api/entrar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clave: campoClave.value }),
+    });
+    if (respuesta.status === 204) {
+      campoClave.value = "";
+      dialogoEntrada.close();
+      void iniciar();
+      return;
+    }
+    const detalle = (await respuesta.json().catch(() => ({}))) as { detail?: string };
+    errorClave.textContent =
+      respuesta.status === 401 ? "Clave incorrecta. Intenta de nuevo." : (detalle.detail ?? "No pude verificar la clave.");
+  } catch {
+    errorClave.textContent = "No encuentro a Azul. ¿Está encendido el portátil?";
+  }
+});
+
+// La pantalla de entrada no se puede cerrar sin la clave.
+dialogoEntrada.addEventListener("cancel", (evento) => evento.preventDefault());
+
+async function iniciar(): Promise<void> {
+  try {
+    const respuesta = await fetch("/api/sesion");
+    const sesion = (await respuesta.json()) as Sesion;
+    if (!sesion.autorizado) {
+      pedirClave(sesion.clave_configurada);
+      return;
+    }
+  } catch {
+    // Sin núcleo: actualizarGasto mostrará el aviso.
+  }
+  await cargarHistorial();
+  await actualizarGasto();
+  texto.focus();
+}
+
+void iniciar();

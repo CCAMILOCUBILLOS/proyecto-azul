@@ -9,12 +9,21 @@ from typing import Any
 
 import anthropic
 import uvicorn
-from fastapi import FastAPI, Query, WebSocket
+from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from azul import __version__
+from azul.access import (
+    COOKIE_MAX_AGE,
+    COOKIE_NAME,
+    AccessMiddleware,
+    is_authorized,
+    is_local,
+    key_matches,
+    session_token,
+)
 from azul.adapters.anthropic_brain import AnthropicBrain, UnconfiguredBrain
 from azul.adapters.deepgram import DeepgramSpeechToText, DeepgramTextToSpeech, UnconfiguredVoice
 from azul.adapters.sqlite_store import SqliteStore
@@ -45,6 +54,10 @@ MAX_INPUT_CHARS = 4000
 
 class ChatInput(BaseModel):
     texto: str = Field(min_length=1, max_length=MAX_INPUT_CHARS, pattern=r"\S")
+
+
+class AccessInput(BaseModel):
+    clave: str = Field(min_length=1, max_length=200)
 
 
 def build_brain(settings: Settings) -> Brain:
@@ -92,9 +105,38 @@ def create_app(
     voice = VoiceSession(conversation, stt, tts, meter=store)
     app = FastAPI(title="Azul", version=__version__)
 
+    access_key = settings.access_key.get_secret_value() if settings.access_key else None
+    app.add_middleware(AccessMiddleware, access_key=access_key)
+
     @app.get("/api/salud")
     async def salud() -> dict[str, str]:
         return {"estado": "ok", "version": __version__}
+
+    @app.get("/api/sesion")
+    async def sesion(request: Request) -> dict[str, bool]:
+        return {
+            "local": is_local(request.scope),
+            "autorizado": is_authorized(request.scope, access_key),
+            "clave_configurada": access_key is not None,
+        }
+
+    @app.post("/api/entrar", status_code=204)
+    async def entrar(entrada: AccessInput, request: Request, response: Response) -> None:
+        if access_key is None:
+            raise HTTPException(
+                503, "Azul no tiene clave de acceso: configúrala en .env (AZUL_ACCESS_KEY)."
+            )
+        if not key_matches(entrada.clave, access_key):
+            await asyncio.sleep(1)  # frena a quien intente adivinar la clave
+            raise HTTPException(401, "Clave incorrecta.")
+        response.set_cookie(
+            COOKIE_NAME,
+            session_token(access_key),
+            max_age=COOKIE_MAX_AGE,
+            httponly=True,
+            samesite="strict",
+            secure=not is_local(request.scope),
+        )
 
     @app.post("/api/chat")
     async def chat(entrada: ChatInput) -> StreamingResponse:

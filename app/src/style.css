@@ -253,6 +253,60 @@ button.microfono[data-estado="respondiendo"] svg {
   }
 }
 
+.entrada-clave {
+  width: min(360px, calc(100vw - 32px));
+  padding: 28px 24px;
+  border: 1px solid var(--borde);
+  border-radius: 16px;
+  background: var(--superficie);
+  color: var(--texto);
+  text-align: center;
+}
+
+.entrada-clave::backdrop {
+  background: rgb(5 12 26 / 85%);
+}
+
+.entrada-clave .orb {
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
+.entrada-clave h2 {
+  margin: 0 0 8px;
+  font-size: 1.5rem;
+}
+
+.entrada-clave p {
+  margin: 0 0 16px;
+  color: var(--suave);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.entrada-clave input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  background: var(--fondo);
+  color: var(--texto);
+  font: inherit;
+  /* 16px evita que iPhone haga zoom al escribir. */
+  font-size: 16px;
+}
+
+.entrada-clave .error-clave {
+  min-height: 1.2em;
+  margin: 8px 0;
+  color: var(--error);
+}
+
+.entrada-clave button {
+  width: 100%;
+}
+
 .solo-lector {
   position: absolute;
   width: 1px;

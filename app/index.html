@@ -6,6 +6,10 @@
     <meta name="theme-color" content="#0b1d3a" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icono.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icono-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Azul" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Azul</title>
   </head>
   <body>
@@ -43,6 +47,17 @@
         <button type="button" id="parar" class="parar" hidden>Parar</button>
       </form>
     </div>
+    <dialog id="entrada" class="entrada-clave" aria-labelledby="entrada-titulo">
+      <form id="formulario-clave" method="dialog">
+        <span class="orb" aria-hidden="true"></span>
+        <h2 id="entrada-titulo">Entrar a Azul</h2>
+        <p>Escribe la clave de acceso. Solo te la pediré una vez en este dispositivo.</p>
+        <label for="clave" class="solo-lector">Clave de acceso</label>
+        <input id="clave" type="password" autocomplete="current-password" required />
+        <p id="error-clave" class="error-clave" role="alert"></p>
+        <button type="submit">Entrar</button>
+      </form>
+    </dialog>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

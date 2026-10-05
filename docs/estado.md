@@ -14,7 +14,8 @@
 | 5. Esqueleto del repositorio | ✅ Completada (ADR 0018–0019) |
 | 6. Incremento 1: cerebro + memoria + gasto | ✅ Completado el 2026-10-05 |
 | 6. Incremento 2: voz | ✅ Completado el 2026-10-05 (probado por el usuario con su voz) |
-| 6. Incrementos 3–4 (celular, respaldo) | ⏳ Pendientes |
+| 6. Incremento 3: celular | ✅ Completado el 2026-10-05 (probado por el usuario en su iPhone; ADR 0021) |
+| 6. Incremento 4: respaldo y validación final | ⏳ Pendiente |
 
 ## Incremento 1: lo que funciona
 - Chat de texto en la app web, con respuesta por partes y botón Parar.
@@ -51,8 +52,15 @@
 | "Azul, para" | Se detiene en 0,2 s, sin costo de IA |
 | Prueba del usuario con su voz | Funciona bien |
 
+## Incremento 3: lo que funciona (ADR 0021)
+- Azul en `https://dell.tailc78da3.ts.net`, solo dentro de la red de Tailscale.
+- Clave de acceso una vez por dispositivo; el portátil no la pide.
+- App instalable en la pantalla de inicio del iPhone, con su ícono.
+- 95 pruebas automáticas.
+
 ## Próximos pasos
-- Incremento 3: acceso desde el celular (Tailscale, HTTPS, clave de la app, ícono PNG para iPhone).
+- Incremento 4: respaldo y restauración de la memoria; validación final de los 6 criterios del MVP.
+- El usuario debe evitar que el portátil se suspenda mientras está enchufado (configuración de energía de Windows; lo hace el usuario).
 - Mejoras de velocidad **aprobadas por el usuario el 2026-10-05**, para después del incremento 3:
   - A. Guardar datos sin una segunda vuelta al cerebro (~5 s menos al aprender algo).
   - B. Clima con un servicio gratuito, Open-Meteo, sin cuenta (~10 s menos en preguntas del clima).
