@@ -9,10 +9,25 @@
     <title>Azul</title>
   </head>
   <body>
-    <main id="app">
-      <h1>Azul</h1>
-      <p id="estado" role="status">Conectando…</p>
-    </main>
+    <div class="shell">
+      <header class="top">
+        <div class="brand">
+          <span class="orb" aria-hidden="true"></span>
+          <h1>Azul</h1>
+        </div>
+        <p id="estado" class="estado" role="status">Conectando…</p>
+      </header>
+
+      <main id="conversacion" class="conversacion" aria-live="polite" aria-label="Conversación">
+      </main>
+
+      <form id="formulario" class="entrada">
+        <label for="texto" class="solo-lector">Escríbele a Azul</label>
+        <textarea id="texto" rows="1" placeholder="Escríbele a Azul…" autocomplete="off"></textarea>
+        <button type="submit" id="enviar">Enviar</button>
+        <button type="button" id="parar" class="parar" hidden>Parar</button>
+      </form>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

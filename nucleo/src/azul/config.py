@@ -19,6 +19,8 @@ class Settings(BaseSettings):
         env_prefix="AZUL_",
         env_file=REPO_ROOT / ".env",
         env_file_encoding="utf-8",
+        # Una línea vacía en .env (p. ej. "ANTHROPIC_API_KEY=") cuenta como no configurada.
+        env_ignore_empty=True,
         extra="ignore",
     )
 
@@ -37,8 +39,12 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
     deepgram_api_key: SecretStr | None = Field(default=None, validation_alias="DEEPGRAM_API_KEY")
 
-    # Cerebro (ADR 0005, 0014).
+    # Cerebro (ADR 0005, 0014, 0015).
     brain_model: str = "claude-opus-5-5"
+    # Funciones beta de Anthropic; se pueden apagar si el proveedor las rechaza.
+    anthropic_fallbacks: bool = True
+    anthropic_per_message_effort: bool = True
+    web_search_max_uses: int = Field(default=3, ge=0)
 
     # Control de gasto (R3).
     monthly_budget_usd: float = Field(default=50.0, gt=0)

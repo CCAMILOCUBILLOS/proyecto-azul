@@ -11,9 +11,17 @@ ENV_VARS = (
     "AZUL_APP_DIST_DIR",
     "AZUL_ACCESS_KEY",
     "AZUL_BRAIN_MODEL",
+    "AZUL_ANTHROPIC_FALLBACKS",
+    "AZUL_ANTHROPIC_PER_MESSAGE_EFFORT",
+    "AZUL_WEB_SEARCH_MAX_USES",
     "AZUL_MONTHLY_BUDGET_USD",
     "AZUL_BUDGET_WARNING_USD",
 )
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 
 @pytest.fixture(autouse=True)

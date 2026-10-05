@@ -10,6 +10,8 @@
 | S6 | El uso será moderado, unos 30 minutos de conversación al día | Fase 2 | Pendiente (se medirá) | El costo cambia en proporción |
 | S7 | El usuario crea las cuentas de Anthropic y Deepgram y carga las claves en `.env` | Fase 2 | Pendiente | No hay pruebas reales hasta tener las claves |
 | S8 | Python 3.13 instalado con `uv`, solo para Azul | Fase 3 | Confirmado (instalado el 2026-10-04) | — |
+| S9 | La cuenta de Anthropic tiene acceso a las betas de esfuerzo por mensaje y de reintento ante rechazos | Incremento 1 | Pendiente (se verifica en la prueba real) | Se apagan en `.env` (`AZUL_ANTHROPIC_PER_MESSAGE_EFFORT=false`, `AZUL_ANTHROPIC_FALLBACKS=false`); sin la primera, cambiar el esfuerzo invalida la caché |
+| S10 | Una pregunta diaria del clima cuesta ~4–8 centavos (~1,80 USD/mes) | Incremento 1 | Pendiente (se medirá) | Ajustar las estimaciones de costo |
 
 ## Requisitos confirmados por el usuario
 

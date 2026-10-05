@@ -23,6 +23,15 @@ def test_env_overrides(monkeypatch):
     assert settings.anthropic_api_key.get_secret_value() == "clave-de-prueba"
 
 
+def test_empty_key_in_env_file_counts_as_missing(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("ANTHROPIC_API_KEY=\nDEEPGRAM_API_KEY=  \n", encoding="utf-8")
+
+    settings = Settings(_env_file=env_file)
+
+    assert settings.anthropic_api_key is None
+
+
 def test_secrets_are_hidden_in_repr(monkeypatch):
     monkeypatch.setenv("DEEPGRAM_API_KEY", "clave-secreta")
 

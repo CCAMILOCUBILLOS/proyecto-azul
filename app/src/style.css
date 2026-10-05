@@ -1,41 +1,193 @@
 :root {
   --fondo: #0b1d3a;
+  --superficie: #12284d;
+  --borde: #1f3a66;
   --texto: #e6eefc;
   --suave: #8aa4d6;
+  --acento: #3d8bff;
+  --usuario: #1e4f99;
   --ok: #5fd3a1;
+  --aviso: #ffc46b;
   --error: #ff8a7a;
   color-scheme: dark;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
   background: var(--fondo);
   color: var(--texto);
 }
 
-main {
-  padding: 16px;
-  text-align: center;
+.shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100dvh;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--borde);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.orb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--acento);
+  box-shadow: 0 0 12px var(--acento);
 }
 
 h1 {
-  margin: 0 0 8px;
-  font-size: 2.5rem;
-  letter-spacing: 0.04em;
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: 0.06em;
 }
 
-#estado {
+.estado {
+  margin: 0;
+  font-size: 0.8rem;
   color: var(--suave);
+  text-align: right;
 }
 
-#estado[data-ok="true"] {
-  color: var(--ok);
+.estado[data-nivel="aviso"] {
+  color: var(--aviso);
 }
 
-#estado[data-ok="false"] {
+.estado[data-nivel="error"] {
   color: var(--error);
+}
+
+.conversacion {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 0;
+  overflow-y: auto;
+}
+
+.burbuja {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.burbuja.user {
+  align-self: flex-end;
+  background: var(--usuario);
+  border-bottom-right-radius: 4px;
+}
+
+.burbuja.assistant {
+  align-self: flex-start;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-bottom-left-radius: 4px;
+}
+
+.burbuja.aviso {
+  align-self: center;
+  max-width: 95%;
+  font-size: 0.85rem;
+  color: var(--aviso);
+  background: transparent;
+  border: 1px dashed var(--borde);
+  text-align: center;
+}
+
+.burbuja.pensando::after {
+  content: "…";
+  color: var(--suave);
+  animation: latido 1s ease-in-out infinite;
+}
+
+.burbuja.interrumpida::after {
+  content: " (interrumpido)";
+  color: var(--suave);
+  font-size: 0.8em;
+}
+
+@keyframes latido {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .burbuja.pensando::after {
+    animation: none;
+  }
+}
+
+.entrada {
+  display: flex;
+  gap: 8px;
+  padding: 12px 0 16px;
+  border-top: 1px solid var(--borde);
+}
+
+textarea {
+  flex: 1;
+  min-height: 44px;
+  max-height: 160px;
+  padding: 11px 14px;
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  background: var(--superficie);
+  color: var(--texto);
+  font: inherit;
+  resize: none;
+}
+
+textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
+button {
+  min-width: 88px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--acento);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.parar {
+  background: var(--error);
+  color: #2a0d08;
+}
+
+.solo-lector {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
