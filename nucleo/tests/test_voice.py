@@ -10,10 +10,12 @@ from azul.core.voice import (
     SEARCH_PHRASE,
     Heard,
     ListeningEnded,
+    NotForAzul,
     NothingHeard,
     Speech,
     Stopped,
     VoiceSession,
+    WakeOnly,
 )
 from tests.fakes import FakeBrain, FakeSpeechToText, FakeTextToSpeech
 
@@ -224,3 +226,58 @@ async def test_ends_speech_before_any_words_keeps_listening(store):
 
     assert Heard("Hola", is_final=True) in events
     assert events.count(ListeningEnded()) == 1
+
+
+async def wake(session, *transcripts):
+    stt = session._stt
+    stt.transcripts = list(transcripts)
+    return [event async for event in session.handle_wake(audio(b"pcm"))]
+
+
+async def test_wake_mode_ignores_speech_not_addressed_to_azul(store):
+    brain = FakeBrain(["no debería responder"])
+    session = make_session(store, brain, FakeSpeechToText())
+
+    events = await wake(session, Transcript("y entonces le dije que el carro azul", True))
+
+    assert events == [NotForAzul()]
+    assert brain.requests == []
+    assert brain.prewarms == []  # no se gasta en preparar la caché por una conversación ajena
+    assert await store.recent_messages(10) == []  # no se guarda nada de lo ajeno
+
+
+async def test_wake_phrase_alone_asks_the_app_to_listen(store):
+    brain = FakeBrain()
+    session = make_session(store, brain, FakeSpeechToText())
+
+    events = await wake(session, Transcript("Oye Azul.", True))
+
+    assert events == [Heard("", is_final=False), WakeOnly()]
+    assert brain.requests == []
+
+
+async def test_wake_phrase_with_a_request_is_answered(store):
+    brain = FakeBrain(["Hoy hace sol."])
+    tts = FakeTextToSpeech()
+    session = make_session(store, brain, FakeSpeechToText(), tts)
+
+    events = await wake(
+        session,
+        Transcript("Oye Azul, ¿qué", False),
+        Transcript("Oye Azul, ¿qué clima hace?", True),
+    )
+
+    assert Heard("¿qué clima hace?", is_final=True) in events
+    assert brain.requests[0].messages[-1].text == "¿qué clima hace?"  # sin "Oye Azul"
+    assert tts.sentences == ["Hoy hace sol."]
+    assert len(brain.prewarms) == 1
+
+
+async def test_wake_phrase_with_stop_command(store):
+    brain = FakeBrain(["no"])
+    session = make_session(store, brain, FakeSpeechToText())
+
+    events = await wake(session, Transcript("Oye Azul, para.", True))
+
+    assert events[-1] == Stopped()
+    assert brain.requests == []

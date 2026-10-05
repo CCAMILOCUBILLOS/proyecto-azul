@@ -67,3 +67,26 @@ async def test_data_survives_reopening(tmp_path, clock):
 def test_schema_version_is_recorded(store, tmp_path):
     with closing(sqlite3.connect(tmp_path / "datos" / "azul.db")) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+
+
+async def test_old_memory_is_upgraded_without_losing_messages(tmp_path, clock):
+    path = tmp_path / "vieja.db"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.executescript(
+            "CREATE TABLE messages (id INTEGER PRIMARY KEY, role TEXT NOT NULL, "
+            "text TEXT NOT NULL, created_at TEXT NOT NULL);"
+            "INSERT INTO messages (role, text, created_at) "
+            "VALUES ('user', 'hola de la versión 1', '2026-10-01T10:00:00+00:00');"
+            "PRAGMA user_version = 1;"
+        )
+
+    store = SqliteStore(path, now=clock)
+    await store.add_message(Message("assistant", "respuesta", consulted="búsqueda web"))
+
+    messages = await store.recent_messages(10)
+    assert [(m.text, m.consulted) for m in messages] == [
+        ("hola de la versión 1", ""),
+        ("respuesta", "búsqueda web"),
+    ]
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION

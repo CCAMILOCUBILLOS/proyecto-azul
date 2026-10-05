@@ -96,3 +96,17 @@ def test_phone_access_without_configured_key_explains_what_to_do(settings):
     assert response.status_code == 503
     assert "AZUL_ACCESS_KEY" in response.json()["detail"]
     assert client.get("/api/historial").status_code == 401
+
+
+def test_siri_shortcut_can_use_the_key_in_a_header(settings_with_key):
+    client = remote_client(settings_with_key)
+
+    without_key = client.post("/api/preguntar", json={"texto": "hola"})
+    wrong_key = client.post(
+        "/api/preguntar", json={"texto": "hola"}, headers={"X-Azul-Clave": "no"}
+    )
+    right_key = client.post("/api/preguntar", json={"texto": "hola"}, headers={"X-Azul-Clave": KEY})
+
+    assert without_key.status_code == 401
+    assert wrong_key.status_code == 401
+    assert right_key.status_code == 200

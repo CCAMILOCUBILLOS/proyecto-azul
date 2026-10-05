@@ -10,10 +10,9 @@ if not exist "app\dist\index.html" (
   popd
 )
 
-echo Iniciando Azul en http://127.0.0.1:8710
-echo Para detenerlo, cierra esta ventana o presiona Ctrl+C.
+echo Iniciando Azul...
 cd nucleo
-uv run azul
+uv run --quiet azul
 goto :eof
 
 :error

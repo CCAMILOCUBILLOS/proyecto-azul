@@ -155,3 +155,47 @@ def test_precalentar_endpoint(settings):
 
     assert client.post("/api/precalentar").status_code == 204
     assert len(brain.prewarms) == 1
+
+
+def test_wake_mode_over_websocket(settings):
+    stt = FakeSpeechToText([Transcript("Oye Azul, ¿cómo estás?", True)])
+    brain = FakeBrain(["¡Muy bien!"])
+    app = create_app(settings, brain=brain, stt=stt, tts=FakeTextToSpeech())
+
+    with local_client(app).websocket_connect("/api/voz") as socket:
+        socket.send_json({"tipo": "activacion_inicio"})
+        socket.send_bytes(b"pcm")
+        socket.send_json({"tipo": "activacion_fin"})
+        received = receive_until_end(socket)
+
+    assert {"tipo": "escuchado", "texto": "¿cómo estás?", "final": True} in received
+    assert brain.requests[0].messages[-1].text == "¿cómo estás?"
+
+
+def test_wake_mode_ignores_other_speech_over_websocket(settings):
+    stt = FakeSpeechToText([Transcript("pásame la sal", True)])
+    app = create_app(settings, brain=FakeBrain(["no"]), stt=stt, tts=FakeTextToSpeech())
+
+    with local_client(app).websocket_connect("/api/voz") as socket:
+        socket.send_json({"tipo": "activacion_inicio"})
+        socket.send_json({"tipo": "activacion_fin"})
+        received = receive_until_end(socket)
+
+    assert received == [{"tipo": "turno"}, {"tipo": "ignorado"}, {"tipo": "fin"}]
+
+
+def test_preguntar_returns_the_whole_answer_as_text(settings):
+    brain = FakeBrain(["¡Hola, ", "Camilo!", " <recordar>Usa Siri.</recordar>"])
+    client = local_client(create_app(settings, brain=brain))
+
+    response = client.post("/api/preguntar", json={"texto": "hola"})
+
+    assert response.json() == {"respuesta": "¡Hola, Camilo!"}
+
+
+def test_preguntar_explains_errors(settings):
+    client = local_client(create_app(settings, brain=FakeBrain(error="Sin conexión.")))
+
+    assert client.post("/api/preguntar", json={"texto": "hola"}).json() == {
+        "respuesta": "Sin conexión."
+    }

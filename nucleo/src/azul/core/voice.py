@@ -11,6 +11,7 @@ from azul.core.conversation import Conversation, ErrorNotice, ReplyEvent, Search
 from azul.core.ports import SpeechToText, TextToSpeech, Usage, UsageMeter, VoiceError
 from azul.core.sentences import SentenceSplitter
 from azul.core.stop import is_stop_command
+from azul.core.wake import split_wake_phrase
 
 log = logging.getLogger(__name__)
 
@@ -18,8 +19,9 @@ SEARCH_PHRASE = "Déjame buscarlo."
 # Frases cortas si Azul tarda en empezar a responder.
 FILLER_SECONDS = 2.5
 FILLER_PHRASES = ("Dame un segundo.", "Mmm, déjame ver.", "Ya te digo.")
-# Cuánto esperar al precalentamiento antes de preguntarle al cerebro.
-PREWARM_WAIT_SECONDS = 3.0
+# Cuánto esperar al precalentamiento antes de preguntarle al cerebro. Si apenas
+# empezó, esperarlo retrasa más de lo que ahorra (la respuesta escribe su propia caché).
+PREWARM_WAIT_SECONDS = 1.0
 # Escucha: se corta si no se oye nada en 8 s, o tras 60 s hablando.
 NO_SPEECH_SECONDS = 8.0
 MAX_LISTEN_SECONDS = 60.0
@@ -55,7 +57,19 @@ class ListeningEnded:
     """Azul dejó de escuchar: la app puede apagar el micrófono."""
 
 
-VoiceEvent = Heard | Speech | Stopped | NothingHeard | ListeningEnded | ReplyEvent
+@dataclass(frozen=True)
+class NotForAzul:
+    """Modo "Oye Azul": la voz captada no empezaba con la activación."""
+
+
+@dataclass(frozen=True)
+class WakeOnly:
+    """Modo "Oye Azul": dijeron solo "Oye Azul", sin pedir nada todavía."""
+
+
+VoiceEvent = (
+    Heard | Speech | Stopped | NothingHeard | ListeningEnded | NotForAzul | WakeOnly | ReplyEvent
+)
 
 _DONE = object()
 
@@ -140,12 +154,66 @@ class VoiceSession:
         if not text:
             yield NothingHeard()
             return
+        async with aclosing(self._answer(text, prewarm)) as events:
+            async for event in events:
+                yield event
+
+    async def handle_wake(self, audio: AsyncIterator[bytes]) -> AsyncIterator[VoiceEvent]:
+        """Un fragmento de voz captado en modo "Oye Azul" (ADR 0025).
+
+        La app manda solo los fragmentos con voz y los corta al detectar silencio.
+        Azul responde únicamente si el fragmento empieza con "Oye Azul"; lo demás
+        (la TV, otra conversación) se descarta sin mostrarlo ni guardarlo.
+        """
+        prewarm: asyncio.Task[None] | None = None
+        finals: list[str] = []
+        try:
+            async with aclosing(self._stt.transcribe(audio)) as transcripts:
+                async for item in transcripts:
+                    if isinstance(item, Usage):
+                        await self._meter.record(item)
+                        continue
+                    if not item.text:
+                        continue
+                    heard = " ".join([*finals, item.text])
+                    if item.is_final:
+                        finals.append(item.text)
+                    command = split_wake_phrase(heard)
+                    if command is None:
+                        continue
+                    if prewarm is None:
+                        # Se prepara la caché solo cuando de verdad llaman a Azul.
+                        prewarm = self._start_background(self._prewarm())
+                    yield Heard(command, is_final=False)
+        except VoiceError as error:
+            yield ErrorNotice(str(error))
+            return
+
+        command = split_wake_phrase(" ".join(finals))
+        # Sin el contenido: lo que no era para Azul no se guarda en ninguna parte.
+        log.info(
+            "Fragmento de voz (modo Oye Azul): %s",
+            "ignorado" if command is None else "activación",
+        )
+        if command is None:
+            yield NotForAzul()
+            return
+        if not command:
+            yield WakeOnly()
+            return
+        async with aclosing(self._answer(command, prewarm)) as events:
+            async for event in events:
+                yield event
+
+    async def _answer(
+        self, text: str, prewarm: asyncio.Task[None] | None
+    ) -> AsyncIterator[VoiceEvent]:
         yield Heard(text, is_final=True)
         if is_stop_command(text):
             yield Stopped()
             return
-
-        await asyncio.wait({prewarm}, timeout=PREWARM_WAIT_SECONDS)
+        if prewarm is not None:
+            await asyncio.wait({prewarm}, timeout=PREWARM_WAIT_SECONDS)
         # aclosing: si el usuario interrumpe, la respuesta se corta y se guarda en el acto.
         async with aclosing(self._reply(text)) as events:
             async for event in events:

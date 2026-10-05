@@ -5,6 +5,8 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import aclosing, suppress
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any
 
 import anthropic
@@ -42,11 +44,13 @@ from azul.core.ports import Brain, SpeechToText, TextToSpeech, WeatherProvider
 from azul.core.voice import (
     Heard,
     ListeningEnded,
+    NotForAzul,
     NothingHeard,
     Speech,
     Stopped,
     VoiceEvent,
     VoiceSession,
+    WakeOnly,
 )
 
 log = logging.getLogger(__name__)
@@ -151,6 +155,25 @@ def create_app(
 
         return StreamingResponse(events(), media_type="application/x-ndjson")
 
+    @app.post("/api/preguntar")
+    async def preguntar(entrada: ChatInput) -> dict[str, str]:
+        """Pregunta y respuesta completas en texto, para el Atajo de Siri (ADR 0026)."""
+        parts: list[str] = []
+        notices: list[str] = []
+        async for event in conversation.reply(entrada.texto.strip()):
+            match event:
+                case TextChunk(text):
+                    parts.append(text)
+                case ErrorNotice(message):
+                    notices.append(message)
+                case BudgetNotice(level="blocked", limit_usd=limit):
+                    notices.append(
+                        f"Llegaste al límite de {limit:.0f} dólares de este mes; "
+                        "estoy en pausa hasta el próximo."
+                    )
+        answer = "".join(parts).strip()
+        return {"respuesta": " ".join([answer, *notices]).strip() or "No tengo respuesta."}
+
     @app.post("/api/precalentar", status_code=204)
     async def precalentar() -> None:
         # La app lo llama al empezar a escribir; solo actúa si la caché venció.
@@ -200,7 +223,7 @@ async def _voice_connection(socket: WebSocket, voice: VoiceSession) -> None:
     current: asyncio.Task[None] | None = None
     audio: asyncio.Queue[bytes | None] | None = None
 
-    async def run(queue: asyncio.Queue[bytes | None]) -> None:
+    async def run(queue: asyncio.Queue[bytes | None], *, wake: bool) -> None:
         async def chunks() -> AsyncIterator[bytes]:
             while (chunk := await queue.get()) is not None:
                 yield chunk
@@ -208,7 +231,8 @@ async def _voice_connection(socket: WebSocket, voice: VoiceSession) -> None:
         try:
             # Marca el inicio del turno: la app descarta el audio que llegue de turnos anteriores.
             await socket.send_json({"tipo": "turno"})
-            async with aclosing(voice.handle(chunks())) as events:
+            handler = voice.handle_wake if wake else voice.handle
+            async with aclosing(handler(chunks())) as events:
                 async for event in events:
                     if isinstance(event, Speech):
                         await socket.send_bytes(event.audio)
@@ -244,11 +268,11 @@ async def _voice_connection(socket: WebSocket, voice: VoiceSession) -> None:
                     audio.put_nowait(message["bytes"])
                 continue
             command = json.loads(message.get("text") or "{}").get("tipo")
-            if command == "hablar_inicio":
+            if command in ("hablar_inicio", "activacion_inicio"):
                 await interrupt()
                 audio = asyncio.Queue()
-                current = asyncio.create_task(run(audio))
-            elif command == "hablar_fin" and audio is not None:
+                current = asyncio.create_task(run(audio, wake=command == "activacion_inicio"))
+            elif command in ("hablar_fin", "activacion_fin") and audio is not None:
                 audio.put_nowait(None)
                 audio = None
             elif command == "parar":
@@ -287,6 +311,10 @@ def _voice_event_to_dict(event: VoiceEvent) -> dict[str, Any]:
             return {"tipo": "nada_escuchado"}
         case ListeningEnded():
             return {"tipo": "escucha_terminada"}
+        case NotForAzul():
+            return {"tipo": "ignorado"}
+        case WakeOnly():
+            return {"tipo": "activado"}
         case _:
             return _event_to_dict(event)
 
@@ -295,11 +323,29 @@ def _ndjson(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False) + "\n"
 
 
-def run() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+LOG_MAX_BYTES = 1_000_000
+LOG_FILES_KEPT = 3
+
+
+def _configure_logging(log_path: Path) -> None:
+    """El registro técnico va a un archivo, no a la ventana.
+
+    En Windows, un clic dentro de la ventana de comandos la pone en modo
+    selección y pausa a cualquier programa que escriba en ella: Azul se
+    quedaba congelado. Escribiendo en un archivo, eso no puede pasar.
+    """
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    handler = RotatingFileHandler(
+        log_path, maxBytes=LOG_MAX_BYTES, backupCount=LOG_FILES_KEPT, encoding="utf-8"
     )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
+
+
+def run() -> None:
     settings = get_settings()
+    log_path = settings.data_dir / "azul.log"
+    _configure_logging(log_path)
     try:
         for path in backup_if_due(
             settings.db_path, settings.backup_destinations, keep=settings.backups_to_keep
@@ -308,4 +354,8 @@ def run() -> None:
     except Exception:
         # Un respaldo fallido no debe impedir que Azul arranque.
         log.exception("No se pudo hacer el respaldo automático")
-    uvicorn.run(create_app(settings), host=settings.host, port=settings.port)
+    print(f"Azul está encendido en http://127.0.0.1:{settings.port}")
+    print(f"Registro técnico: {log_path}")
+    print("Para apagarlo, cierra esta ventana.", flush=True)
+    # log_config=None: uvicorn usa el registro en archivo configurado arriba.
+    uvicorn.run(create_app(settings), host=settings.host, port=settings.port, log_config=None)

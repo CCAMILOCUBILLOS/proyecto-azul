@@ -5,7 +5,7 @@ import logging
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Literal
 
@@ -33,6 +33,10 @@ HISTORY_LIMIT = 40
 MAX_FACT_CHARS = 300
 # La caché del proveedor dura 5 minutos; con 4 hay margen.
 CACHE_FRESH_SECONDS = 240
+
+WEB_SEARCH = "búsqueda web"
+# La escribe el sistema, nunca el modelo (ver persona.py).
+CONSULTED_MARK = "⟦consultado: {}⟧"
 
 _WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 _MONTHS = (
@@ -98,6 +102,7 @@ class Conversation:
         self._now = now
         self._clock = clock
         self._last_brain_call: float | None = None
+        self._consulted: list[str] = []
         # Mismo orden y definición en cada solicitud: así las herramientas quedan en caché.
         self._tools: list[ToolSpec] = []
         if weather is not None:
@@ -137,7 +142,9 @@ class Conversation:
         await self._memory.add_message(Message("user", user_text))
         request = BrainRequest(
             system=build_system_prompt(await self._memory.facts()),
-            messages=_starting_with_user(await self._memory.recent_messages(HISTORY_LIMIT)),
+            messages=_for_brain(
+                _starting_with_user(await self._memory.recent_messages(HISTORY_LIMIT))
+            ),
             effort=choose_effort(user_text),
             context=self._context(),
             tools=self._tools,
@@ -146,7 +153,8 @@ class Conversation:
 
         parts: list[str] = []
         notes = FactNotes()
-        announced_search = False
+        # Lo que se consulta de verdad en esta respuesta queda guardado con ella (ADR 0027).
+        self._consulted = consulted = []
         try:
             # aclosing: si el usuario interrumpe, el cerebro se cierra de inmediato.
             async with aclosing(self._brain.respond(request)) as events:
@@ -154,8 +162,8 @@ class Conversation:
                     if isinstance(event, Usage):
                         await self._meter.record(event)
                     elif isinstance(event, Searching):
-                        if not announced_search:
-                            announced_search = True
+                        if WEB_SEARCH not in consulted:
+                            consulted.append(WEB_SEARCH)
                             yield SearchNotice()
                     else:
                         visible, facts = notes.feed(event)
@@ -178,7 +186,9 @@ class Conversation:
             # También se guarda una respuesta interrumpida: es lo que el usuario alcanzó a recibir.
             answer = "".join(parts).strip()
             if answer:
-                await self._memory.add_message(Message("assistant", answer))
+                await self._memory.add_message(
+                    Message("assistant", answer, consulted="; ".join(consulted))
+                )
 
         spent = await self._meter.month_total_usd()
         if spent >= self._budget:
@@ -201,7 +211,7 @@ class Conversation:
         history = await self._memory.recent_messages(HISTORY_LIMIT - 1)
         request = BrainRequest(
             system=build_system_prompt(await self._memory.facts()),
-            messages=_starting_with_user(history),
+            messages=_for_brain(_starting_with_user(history)),
             tools=self._tools,
         )
         usage = await self._brain.prewarm(request)
@@ -225,6 +235,7 @@ class Conversation:
             forecast = await self._weather.forecast(place.strip(), days)
         except WeatherError as error:
             raise ValueError(str(error)) from error
+        self._consulted.append(f"clima de {forecast.get('lugar', place.strip())}")
         return json.dumps(forecast, ensure_ascii=False)
 
     def _context(self) -> str:
@@ -233,6 +244,20 @@ class Conversation:
             f"Fecha y hora actual del usuario: {_WEEKDAYS[now.weekday()]} {now.day} de "
             f"{_MONTHS[now.month - 1]} de {now.year}, {now:%H:%M}."
         )
+
+
+def _for_brain(messages: list[Message]) -> list[Message]:
+    """Agrega a cada respuesta pasada la marca de lo que se consultó de verdad.
+
+    Sin ella, Azul veía en su historial "lo busqué" sin rastro de la búsqueda y
+    concluía, en falso, que había mentido (ADR 0027).
+    """
+    return [
+        replace(message, text=f"{message.text}\n\n{CONSULTED_MARK.format(message.consulted)}")
+        if message.role == "assistant" and message.consulted
+        else message
+        for message in messages
+    ]
 
 
 def _starting_with_user(messages: list[Message]) -> list[Message]:

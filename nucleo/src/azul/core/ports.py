@@ -27,6 +27,8 @@ class Message:
     role: Role
     text: str
     created_at: datetime | None = None
+    # Lo que Azul consultó de verdad para esta respuesta ("búsqueda web; clima: …").
+    consulted: str = ""
 
 
 @dataclass(frozen=True)

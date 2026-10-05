@@ -81,12 +81,18 @@
 - ✅ B. Clima con Open-Meteo: 6,3 s en vez de 15–25 s (ADR 0024).
 - 118 pruebas automáticas.
 
+## v0.2.0: manos libres en el celular (completada el 2026-10-05)
+- **"Oye Azul"** (ADR 0025): interruptor en la app; detector de voz local + Deepgram; ignora lo que no empieza llamando a Azul ("Oye/Hoy/Hey Azul", "Azul,"); indicador de nivel; reconexión automática. Picovoice quedó descartado: exige correo de empresa.
+- **Modo conversación** (ADR 0026): un toque y Azul vuelve a escuchar tras cada respuesta, hasta una despedida ("adiós", "eso es todo"…), ■ o 8 s de silencio. Es lo que el usuario prefiere usar.
+- **Atajo de Siri** (ADR 0026): `POST /api/preguntar` con la cabecera `X-Azul-Clave`. Funciona, pero Siri intercepta algunas frases ("recuerda…").
+- **Honestidad** (ADR 0027): Azul guarda qué consultó de verdad (`⟦consultado: …⟧`) y no inventa datos ni fuentes; se limpió el historial con falsas confesiones.
+- Arreglo: el registro técnico va a `datos/azul.log`. Un clic en la ventana negra congelaba a Azul.
+- 160 pruebas automáticas. Probado por el usuario: la conversación fluye y ya no duda de lo que busca.
+
 ## Próximos pasos
-- Confirmar los criterios pendientes (Android, memoria al día siguiente).
-- v0.2: "Oye Azul" (decidir el motor de detección), o la capacidad que el usuario pida (ADR 0017).
+- **Siguiente:** Azul en el portátil en segundo plano (escuchar con la pantalla apagada y responder por los parlantes).
+- Pendiente de seguridad: el usuario cambia `AZUL_ACCESS_KEY` (quedó visible en una captura) y la actualiza en la app y en el atajo.
+- Confirmar los criterios pendientes del MVP (Android, memoria al día siguiente).
 - El usuario debe evitar que el portátil se suspenda mientras está enchufado (configuración de energía de Windows; lo hace el usuario).
-- Mejoras de velocidad **aprobadas por el usuario el 2026-10-05**, para después del incremento 3:
-  - A. Guardar datos sin una segunda vuelta al cerebro (~5 s menos al aprender algo).
-  - B. Clima con un servicio gratuito, Open-Meteo, sin cuenta (~10 s menos en preguntas del clima).
 - Descartada por ahora: bajar el silencio de fin a 0,8 s. Pendiente de evaluar: voz por streaming de Deepgram.
 - Optimización de costo: la ventana del historial (40 mensajes) se corre en cada turno y rehace la caché de los mensajes; conviene moverla por bloques.

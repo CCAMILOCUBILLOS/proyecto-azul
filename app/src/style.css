@@ -61,6 +61,49 @@ h1 {
   letter-spacing: 0.06em;
 }
 
+.controles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+button.oye-azul {
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--suave);
+  font-size: 0.85rem;
+}
+
+button.oye-azul[aria-pressed="true"] {
+  border-color: var(--acento);
+  /* Nivel del micrófono como un relleno que crece de izquierda a derecha. */
+  background: linear-gradient(
+    to right,
+    rgb(61 139 255 / 45%) calc(var(--nivel, 0) * 100%),
+    rgb(61 139 255 / 12%) calc(var(--nivel, 0) * 100%)
+  );
+  color: var(--texto);
+}
+
+button.oye-azul[aria-pressed="true"][data-enviando="true"] {
+  border-color: var(--ok);
+  background: linear-gradient(
+    to right,
+    rgb(95 211 161 / 45%) calc(var(--nivel, 0) * 100%),
+    rgb(95 211 161 / 12%) calc(var(--nivel, 0) * 100%)
+  );
+}
+
+button.oye-azul[aria-pressed="true"]::before {
+  content: "● ";
+  color: var(--ok);
+}
+
 .estado {
   margin: 0;
   font-size: 0.8rem;
@@ -235,6 +278,13 @@ button.microfono[data-estado="escuchando"] {
 
 button.microfono[data-estado="respondiendo"] {
   border-color: var(--error);
+}
+
+/* En modo conversación, un anillo verde indica que Azul volverá a escuchar sola. */
+button.microfono[data-conversacion="true"][data-estado="inactivo"],
+button.microfono[data-conversacion="true"][data-estado="respondiendo"] {
+  outline: 2px solid var(--ok);
+  outline-offset: 2px;
 }
 
 button.microfono[data-estado="respondiendo"] svg {

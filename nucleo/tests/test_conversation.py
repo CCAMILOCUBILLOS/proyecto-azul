@@ -246,3 +246,41 @@ async def test_prewarm_skipped_when_budget_is_exhausted(store):
     await make_conversation(brain, store).prewarm()
 
     assert brain.prewarms == []
+
+
+async def test_what_was_consulted_is_saved_and_shown_to_the_brain_later(store):
+    brain = FakeBrain([Searching(), "América ganó 2 a 1."])
+    conversation = make_conversation(brain, store)
+    await collect(conversation, "¿Quién ganó el partido?")
+
+    saved = (await store.recent_messages(1))[0]
+    assert saved.text == "América ganó 2 a 1."  # el usuario no ve la marca
+    assert saved.consulted == "búsqueda web"
+
+    await collect(conversation, "¿Y el marcador exacto?")
+    previous_answer = brain.requests[1].messages[-2]
+    assert previous_answer.text == "América ganó 2 a 1.\n\n⟦consultado: búsqueda web⟧"
+
+
+async def test_weather_consultation_is_recorded(store):
+    class AnsweringWithWeather(FakeBrain):
+        async def respond(self, request):
+            self.requests.append(request)
+            await request.tools[0].handler({"lugar": "Villavicencio", "dias": 1})
+            yield "Hace calor."
+
+    conversation = conversation_with_weather(AnsweringWithWeather(), store, FakeWeather())
+    await collect(conversation, "¿clima?")
+
+    assert (await store.recent_messages(1))[0].consulted == (
+        "clima de Villavicencio, Meta, Colombia"
+    )
+
+
+async def test_answers_without_consultation_have_no_mark(store):
+    brain = FakeBrain(["Hola."])
+    conversation = make_conversation(brain, store)
+    await collect(conversation, "hola")
+    await collect(conversation, "¿qué tal?")
+
+    assert brain.requests[1].messages[-2].text == "Hola."

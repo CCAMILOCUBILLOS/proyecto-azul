@@ -10,8 +10,16 @@ from typing import Any
 
 from azul.core.ports import Fact, Message, Usage
 
-# Súbelo y agrega una migración cuando cambie el esquema.
-SCHEMA_VERSION = 1
+# Súbelo y agrega una migración en _MIGRATIONS cuando cambie el esquema.
+SCHEMA_VERSION = 2
+
+# Migración de la versión N-1 a la N. Se aplican en orden al abrir la base, así
+# un respaldo viejo restaurado se actualiza solo (R1).
+_MIGRATIONS = {
+    # v2: qué consultó Azul para cada respuesta (búsqueda web, clima…), para que
+    # en turnos siguientes sepa que sí lo consultó (ADR 0027).
+    2: "ALTER TABLE messages ADD COLUMN consulted TEXT NOT NULL DEFAULT ''",
+}
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -45,22 +53,27 @@ class SqliteStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as db, db:
             db.executescript(_SCHEMA)
+            version = max(1, db.execute("PRAGMA user_version").fetchone()[0])
+            for target in range(version + 1, SCHEMA_VERSION + 1):
+                db.execute(_MIGRATIONS[target])
             db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     # --- MemoryStore ---
 
     async def add_message(self, message: Message) -> None:
         await self._write(
-            "INSERT INTO messages (role, text, created_at) VALUES (?, ?, ?)",
-            (message.role, message.text, self._timestamp()),
+            "INSERT INTO messages (role, text, consulted, created_at) VALUES (?, ?, ?, ?)",
+            (message.role, message.text, message.consulted, self._timestamp()),
         )
 
     async def recent_messages(self, limit: int) -> list[Message]:
         rows = await self._read(
-            "SELECT role, text, created_at FROM messages ORDER BY id DESC LIMIT ?", (limit,)
+            "SELECT role, text, created_at, consulted FROM messages ORDER BY id DESC LIMIT ?",
+            (limit,),
         )
         return [
-            Message(role, text, datetime.fromisoformat(at)) for role, text, at in reversed(rows)
+            Message(role, text, datetime.fromisoformat(at), consulted)
+            for role, text, at, consulted in reversed(rows)
         ]
 
     async def add_fact(self, fact: Fact) -> bool:

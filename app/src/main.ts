@@ -32,7 +32,35 @@ let respondiendoPorVoz = false;
 let burbujaEscuchada: HTMLDivElement | null = null;
 let burbujaVoz: HTMLDivElement | null = null;
 
-const voz = new Voz(alEventoDeVoz, () => actualizarBotones());
+const voz = new Voz(alEventoDeVoz, () => {
+  actualizarBotones();
+  continuarConversacion();
+});
+
+// Modo conversación (ADR 0026): tras cada respuesta, Azul vuelve a escuchar sola
+// hasta que el usuario se despide, toca ■ o se queda callado.
+let enConversacion = false;
+let turnosEnConversacion = 0;
+const PAUSA_ANTES_DE_ESCUCHAR_MS = 350; // que no se cuele el final de la voz de Azul
+
+function iniciarConversacion(): void {
+  enConversacion = true;
+  turnosEnConversacion = 0;
+}
+
+function terminarConversacion(aviso?: string): void {
+  if (!enConversacion) return;
+  enConversacion = false;
+  if (aviso) agregarBurbuja("aviso", aviso);
+}
+
+function continuarConversacion(): void {
+  if (!enConversacion) return;
+  setTimeout(() => {
+    const ocupada = voz.escuchando || respondiendoPorVoz || voz.sonando || respuestaEnCurso !== null;
+    if (enConversacion && !ocupada) void empezarAHablar();
+  }, PAUSA_ANTES_DE_ESCUCHAR_MS);
+}
 
 function elemento<T extends Element>(selector: string): T {
   const encontrado = document.querySelector<T>(selector);
@@ -114,8 +142,12 @@ function actualizarBotones(): void {
   botonMicrofono.dataset.estado = estadoActual;
   botonMicrofono.setAttribute("aria-label", ETIQUETAS_MICROFONO[estadoActual]);
   botonMicrofono.title = ETIQUETAS_MICROFONO[estadoActual];
-  texto.placeholder =
-    estadoActual === "escuchando" ? "Te escucho… cuando termines, Azul responde solo" : placeholderNormal;
+  botonMicrofono.dataset.conversacion = String(enConversacion);
+  texto.placeholder = enConversacion
+    ? "Conversando… di «adiós» o toca ■ para terminar"
+    : estadoActual === "escuchando"
+      ? "Te escucho… cuando termines, Azul responde solo"
+      : placeholderNormal;
 }
 
 // --- Chat de texto ---
@@ -143,6 +175,7 @@ function mostrarEventoDeChat(evento: EventoChat, burbuja: HTMLDivElement): void 
 
 async function enviar(mensaje: string): Promise<void> {
   voz.parar();
+  terminarConversacion();
   agregarBurbuja("user", mensaje);
   const burbuja = agregarBurbuja("assistant");
   burbuja.classList.add("pensando");
@@ -191,15 +224,21 @@ async function enviar(mensaje: string): Promise<void> {
 function alEventoDeVoz(evento: EventoVoz): void {
   switch (evento.tipo) {
     case "turno":
-      burbujaEscuchada = agregarBurbuja("user");
-      burbujaEscuchada.classList.add("escuchando");
       burbujaVoz = null;
+      // En modo "Oye Azul" no se muestra nada hasta saber que le hablan a Azul.
+      burbujaEscuchada = null;
+      if (!voz.turnoDeActivacion) {
+        burbujaEscuchada = agregarBurbuja("user");
+        burbujaEscuchada.classList.add("escuchando");
+      }
       break;
     case "escuchado":
-      if (burbujaEscuchada) {
-        burbujaEscuchada.textContent = evento.texto;
-        if (evento.final) burbujaEscuchada.classList.remove("escuchando");
+      if (!burbujaEscuchada) {
+        burbujaEscuchada = agregarBurbuja("user");
+        burbujaEscuchada.classList.add("escuchando");
       }
+      burbujaEscuchada.textContent = evento.texto;
+      if (evento.final) burbujaEscuchada.classList.remove("escuchando");
       if (evento.final) {
         // Apenas termina de escuchar, Azul muestra que está pensando.
         respondiendoPorVoz = true;
@@ -211,10 +250,28 @@ function alEventoDeVoz(evento: EventoVoz): void {
       // Ya no escucha; mientras llega la respuesta, el botón sirve para callar a Azul.
       respondiendoPorVoz = true;
       break;
+    case "ignorado":
+      // La voz captada no era para Azul: no se muestra ni se guarda nada.
+      burbujaEscuchada?.remove();
+      burbujaEscuchada = null;
+      break;
+    case "activado":
+      // Dijeron solo "Oye Azul": suena un tono y Azul queda escuchando la pregunta.
+      burbujaEscuchada?.remove();
+      burbujaEscuchada = null;
+      voz.tono();
+      iniciarConversacion();
+      void empezarAHablar();
+      break;
     case "nada_escuchado":
       respondiendoPorVoz = false;
       burbujaEscuchada?.remove();
-      agregarBurbuja("aviso", "No te escuché. Toca el micrófono y habla cuando se ilumine.");
+      if (enConversacion && turnosEnConversacion > 0) {
+        terminarConversacion("Terminé la conversación. Toca 🎤 cuando quieras seguir.");
+      } else {
+        terminarConversacion();
+        agregarBurbuja("aviso", "No te escuché. Toca el micrófono y habla cuando se ilumine.");
+      }
       break;
     case "texto":
     case "buscando":
@@ -227,14 +284,22 @@ function alEventoDeVoz(evento: EventoVoz): void {
       agregarBurbuja("aviso", evento.tipo === "gasto" ? avisoDeGasto(evento) : evento.mensaje);
       break;
     case "parado":
+      // "Para", "adiós", "eso es todo"… o ■: se termina la conversación.
       terminarBurbujaDeVoz(true);
+      terminarConversacion();
       void actualizarGasto();
       break;
     case "fin":
       burbujaEscuchada?.classList.remove("escuchando");
+      if (burbujaVoz) turnosEnConversacion++;
       terminarBurbujaDeVoz(false);
       void actualizarGasto();
+      continuarConversacion();
       break;
+  }
+  // Ante un error o el límite de gasto, no se insiste en bucle.
+  if (evento.tipo === "error" || (evento.tipo === "gasto" && evento.nivel === "bloqueo")) {
+    terminarConversacion();
   }
   actualizarBotones();
 }
@@ -268,6 +333,8 @@ async function empezarAHablar(): Promise<void> {
 botonMicrofono.addEventListener("click", () => {
   switch (estadoMicrofono()) {
     case "inactivo":
+      // Un toque empieza una conversación: Azul seguirá escuchando tras cada respuesta.
+      iniciarConversacion();
       void empezarAHablar();
       break;
     case "escuchando":
@@ -276,9 +343,74 @@ botonMicrofono.addEventListener("click", () => {
     case "respondiendo":
       voz.parar();
       terminarBurbujaDeVoz(true);
+      terminarConversacion();
       break;
   }
   actualizarBotones();
+});
+
+// --- "Oye Azul" (ADR 0025) ---
+
+const botonOyeAzul = elemento<HTMLButtonElement>("#oye-azul");
+let bloqueoDePantalla: WakeLockSentinel | null = null;
+
+async function mantenerPantallaEncendida(activa: boolean): Promise<void> {
+  // En el celular, "Oye Azul" solo funciona con la pantalla encendida.
+  try {
+    if (activa && "wakeLock" in navigator) {
+      bloqueoDePantalla = await navigator.wakeLock.request("screen");
+    } else {
+      await bloqueoDePantalla?.release();
+      bloqueoDePantalla = null;
+    }
+  } catch {
+    // Si el navegador no lo permite, sigue funcionando mientras la pantalla esté encendida.
+  }
+}
+
+function mostrarOyeAzul(): void {
+  const activo = voz.oyeAzulActivo;
+  botonOyeAzul.setAttribute("aria-pressed", String(activo));
+  botonOyeAzul.title = activo
+    ? "Escuchando \"Oye Azul\". Toca para desactivar"
+    : "Escuchar \"Oye Azul\" con la app abierta";
+  if (activo) requestAnimationFrame(animarNivel);
+}
+
+// Barra de nivel dentro del botón: muestra que el micrófono te oye. Se llena al
+// hablar y se pone verde cuando cuenta como voz y se envía a Azul.
+function animarNivel(): void {
+  if (!voz.oyeAzulActivo) {
+    botonOyeAzul.style.removeProperty("--nivel");
+    delete botonOyeAzul.dataset.enviando;
+    return;
+  }
+  botonOyeAzul.style.setProperty("--nivel", String(Math.min(1, voz.nivelDeVoz / 2)));
+  botonOyeAzul.dataset.enviando = String(voz.fragmentoEnCurso);
+  requestAnimationFrame(animarNivel);
+}
+
+botonOyeAzul.addEventListener("click", async () => {
+  if (voz.oyeAzulActivo) {
+    voz.desactivarOyeAzul();
+    void mantenerPantallaEncendida(false);
+  } else {
+    try {
+      await voz.activarOyeAzul(() => estadoMicrofono() === "inactivo" && respuestaEnCurso === null);
+      void mantenerPantallaEncendida(true);
+      agregarBurbuja("aviso", "Te escucho: di \"Oye Azul\" y lo que necesites. Deja la app abierta y la pantalla encendida.");
+    } catch {
+      agregarBurbuja("aviso", "No pude activar el micrófono para \"Oye Azul\".");
+    }
+  }
+  mostrarOyeAzul();
+});
+
+// Al volver a la app, el navegador suelta el bloqueo de pantalla: se pide de nuevo.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && voz.oyeAzulActivo) {
+    void mantenerPantallaEncendida(true);
+  }
 });
 
 // --- Formulario ---

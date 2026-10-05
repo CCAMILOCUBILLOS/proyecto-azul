@@ -103,10 +103,14 @@ class AnthropicBrain:
             except anthropic.APIError as error:
                 raise _to_brain_error(error) from error
 
+            searches = getattr(
+                getattr(final.usage, "server_tool_use", None), "web_search_requests", 0
+            )
             yield Usage(
                 provider="anthropic",
                 cost_usd=cost_usd(final.model, final.usage),
-                detail=f"{final.model} · {final.stop_reason}",
+                # Las búsquedas quedan registradas para poder verificar de dónde salió un dato.
+                detail=f"{final.model} · {final.stop_reason} · búsquedas: {searches or 0}",
             )
 
             if final.stop_reason == "refusal":

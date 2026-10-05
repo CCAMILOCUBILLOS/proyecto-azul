@@ -10,11 +10,15 @@ Tailscale entrega las peticiones desde 127.0.0.1, así que una petición es
 
 import hashlib
 import hmac
+import logging
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import Any
 
+log = logging.getLogger(__name__)
+
 COOKIE_NAME = "azul_acceso"
 COOKIE_MAX_AGE = 365 * 24 * 3600
+KEY_HEADER = b"x-azul-clave"
 
 # Rutas que funcionan sin clave: lo mínimo para mostrar la pantalla de entrada.
 OPEN_API_PATHS = frozenset({"/api/salud", "/api/sesion", "/api/entrar"})
@@ -47,7 +51,11 @@ def is_authorized(scope: Scope, access_key: str | None) -> bool:
     if not access_key:
         return False
     cookie = _cookie(scope, COOKIE_NAME)
-    return cookie is not None and hmac.compare_digest(cookie, session_token(access_key))
+    if cookie is not None and hmac.compare_digest(cookie, session_token(access_key)):
+        return True
+    # Los Atajos del iPhone (Siri) no manejan cookies: envían la clave en una cabecera.
+    header = dict(scope.get("headers") or []).get(KEY_HEADER)
+    return header is not None and key_matches(header.decode("latin-1"), access_key)
 
 
 def key_matches(candidate: str, access_key: str | None) -> bool:
@@ -71,6 +79,7 @@ class AccessMiddleware:
         if not protected or is_authorized(scope, self._access_key):
             await self._app(scope, receive, send)
             return
+        _log_rejection(scope, self._access_key)
         if scope["type"] == "websocket":
             # Cerrar antes de aceptar equivale a rechazar la conexión (HTTP 403).
             await send({"type": "websocket.close", "code": 4401})
@@ -87,6 +96,23 @@ class AccessMiddleware:
             }
         )
         await send({"type": "http.response.body", "body": body})
+
+
+def _log_rejection(scope: Scope, access_key: str | None) -> None:
+    """Anota por qué se rechazó una petición, sin escribir nunca la clave."""
+    header = dict(scope.get("headers") or []).get(KEY_HEADER)
+    if access_key is None:
+        reason = "no hay clave configurada"
+    elif header is None:
+        reason = "sin cookie de sesión ni cabecera X-Azul-Clave"
+    else:
+        value = header.decode("latin-1")
+        reason = (
+            f"la cabecera X-Azul-Clave no coincide ({len(value)} caracteres; se esperan "
+            f"{len(access_key)}; coincide sin mayúsculas ni espacios: "
+            f"{value.strip().lower() == access_key.lower()})"
+        )
+    log.warning("Acceso rechazado a %s: %s", scope.get("path"), reason)
 
 
 def _cookie(scope: Scope, name: str) -> str | None:
