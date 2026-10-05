@@ -1,0 +1,20 @@
+# Secretos: nunca al repositorio (ADR 0012)
+.env
+
+# Datos personales de Azul: se respaldan aparte (R1, ADR 0009)
+datos/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# App web
+node_modules/
+dist/
+
+# Sistema
+Thumbs.db
+.DS_Store
