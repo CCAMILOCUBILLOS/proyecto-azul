@@ -12,7 +12,7 @@
 | 3. Estructura interna | ✅ Completada (ADR 0007–0013) |
 | 4. MVP y hoja de ruta | ✅ Completada (ADR 0015–0017) |
 | 5. Esqueleto del repositorio | ✅ Completada (ADR 0018–0019) |
-| 6. Incremento 1: cerebro + memoria + gasto | 🔄 Construido y probado con simulaciones; falta la prueba real |
+| 6. Incremento 1: cerebro + memoria + gasto | ✅ Prueba real superada el 2026-10-05 (pendiente de aprobación del cierre) |
 | 6. Incrementos 2–4 (voz, celular, respaldo) | ⏳ Pendientes |
 
 ## Incremento 1: lo que ya funciona
@@ -22,7 +22,18 @@
 - Control de gasto: costo por respuesta, aviso a los 40 USD y bloqueo a los 50.
 - 43 pruebas automáticas.
 
+## Prueba real (2026-10-05)
+7 mensajes con datos temporales aparte; costo total: 0,161 USD.
+
+| Mensaje | Empieza a responder | Costo |
+|---|---|---|
+| Saludo (caché vacía) | 7,4 s | 3,5 ¢ |
+| Guardar un dato (caché vencida) | 9,4 s | 0,7 ¢ |
+| Clima con búsqueda web | 15,0 s | 6,1 ¢ |
+| Preguntas cortas (caché activa) | 2,0–2,7 s | 0,6 ¢ |
+| Guardar un dato (caché activa) | 5,7 s | 0,8 ¢ |
+| Pregunta tras aprender un dato (la caché se rehace) | 3,0 s | 3,8 ¢ |
+
 ## Próximos pasos
-- El usuario carga crédito en Anthropic, fija el límite en la consola y pega `ANTHROPIC_API_KEY` en `.env`.
-- Prueba real, avisando antes del costo (menos de 10 centavos). Verificar las betas (S9).
 - Cerrar el incremento 1 y pasar al incremento 2 (voz con Deepgram).
+- Mitigaciones de demora para la voz: precalentar la caché al abrir el micrófono, avisar en voz durante las búsquedas y guardar datos sin una segunda vuelta.
