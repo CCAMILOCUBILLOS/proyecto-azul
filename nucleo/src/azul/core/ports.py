@@ -83,6 +83,10 @@ class VoiceError(Exception):
     """Fallo del oído o la voz, con un mensaje apto para mostrar al usuario."""
 
 
+class WeatherError(Exception):
+    """Fallo al consultar el clima, con un mensaje apto para el usuario."""
+
+
 @dataclass(frozen=True)
 class Transcript:
     text: str
@@ -111,6 +115,12 @@ class TextToSpeech(Protocol):
     """La voz: convierte texto en audio (MP3)."""
 
     def synthesize(self, text: str) -> AsyncIterator[bytes | Usage]: ...
+
+
+class WeatherProvider(Protocol):
+    """El clima: estado actual y pronóstico de un lugar (ADR 0024)."""
+
+    async def forecast(self, place: str, days: int) -> dict[str, Any]: ...
 
 
 class MemoryStore(Protocol):

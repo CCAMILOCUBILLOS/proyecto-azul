@@ -76,9 +76,14 @@
 
 **MVP v0.1.0 marcado el 2026-10-05** con aprobación del usuario (etiqueta git `v0.1.0`).
 
+## Mejoras de velocidad (después del MVP)
+- ✅ A. Memoria con notas, sin segunda vuelta (ADR 0023).
+- ✅ B. Clima con Open-Meteo: 6,3 s en vez de 15–25 s (ADR 0024).
+- 118 pruebas automáticas.
+
 ## Próximos pasos
 - Confirmar los criterios pendientes (Android, memoria al día siguiente).
-- Mejoras de velocidad A y B (aprobadas).
+- v0.2: "Oye Azul" (decidir el motor de detección), o la capacidad que el usuario pida (ADR 0017).
 - El usuario debe evitar que el portátil se suspenda mientras está enchufado (configuración de energía de Windows; lo hace el usuario).
 - Mejoras de velocidad **aprobadas por el usuario el 2026-10-05**, para después del incremento 3:
   - A. Guardar datos sin una segunda vuelta al cerebro (~5 s menos al aprender algo).

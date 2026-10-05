@@ -56,11 +56,9 @@ async def test_full_voice_turn_speaks_sentence_by_sentence(store):
         b"<Son las seis.>",
         "<Buena hora para un café.>".encode(),
     ]
-    assert [e.text for e in events if isinstance(e, TextChunk)] == [
-        "Son las seis. ",
-        "Buena hora para",
-        " un café.",
-    ]
+    assert "".join(e.text for e in events if isinstance(e, TextChunk)) == (
+        "Son las seis. Buena hora para un café."
+    )
     assert brain.requests[0].messages[-1].text == "¿Qué hora es?"
 
 
@@ -118,10 +116,9 @@ async def test_voice_failure_keeps_the_text_answer(store):
 
     events = await collect(make_session(store, brain, stt, tts))
 
-    assert [e.text for e in events if isinstance(e, TextChunk)] == [
-        "Primera frase. ",
-        "Segunda frase.",
-    ]
+    assert "".join(e.text for e in events if isinstance(e, TextChunk)) == (
+        "Primera frase. Segunda frase."
+    )
     assert events.count(ErrorNotice("Deepgram no pudo generar la voz.")) == 1
     assert not any(isinstance(e, Speech) for e in events)
 

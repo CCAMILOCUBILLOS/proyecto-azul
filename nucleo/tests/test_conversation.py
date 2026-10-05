@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 import pytest
@@ -10,7 +11,7 @@ from azul.core.conversation import (
     SearchNotice,
     TextChunk,
 )
-from azul.core.ports import Effort, Fact, Message, Searching, Usage
+from azul.core.ports import Effort, Fact, Message, Searching, Usage, WeatherError
 from tests.fakes import FakeBrain
 
 pytestmark = pytest.mark.anyio
@@ -42,7 +43,8 @@ async def test_streams_answer_and_saves_both_messages(store):
 
     events = await collect(conversation, "hola")
 
-    assert events == [TextChunk("Hola, "), TextChunk("¿qué más?")]
+    assert all(isinstance(e, TextChunk) for e in events)
+    assert "".join(e.text for e in events) == "Hola, ¿qué más?"
     assert [(m.role, m.text) for m in await store.recent_messages(10)] == [
         ("user", "hola"),
         ("assistant", "Hola, ¿qué más?"),
@@ -65,21 +67,76 @@ async def test_request_includes_memory_effort_and_date(store):
     )
     # La conversación enviada empieza siempre por el usuario.
     assert [m.text for m in request.messages] == ["¿va a llover?"]
-    assert [t.name for t in request.tools] == ["remember"]
+    assert request.tools == []  # sin servicio de clima configurado
 
 
-async def test_remember_tool_saves_facts_without_duplicates(store):
-    brain = FakeBrain(["ok"])
-    await collect(make_conversation(brain, store), "hola")
-    remember = brain.requests[0].tools[0]
-
-    assert await remember.handler({"fact": "Prefiere el café sin azúcar."}) == "Guardado."
-    assert await remember.handler({"fact": "Prefiere el café sin azúcar."}) == (
-        "Ya lo tenías guardado."
+async def test_memory_notes_are_saved_and_never_shown(store):
+    brain = FakeBrain(
+        ["¡Mucho gusto, Camilo! ", "<recordar>El usuario se llama", " Camilo.</recordar>"]
     )
-    with pytest.raises(ValueError):
-        await remember.handler({"fact": "   "})
+
+    events = await collect(make_conversation(brain, store), "Me llamo Camilo")
+
+    assert events == [TextChunk("¡Mucho gusto, Camilo!")]
+    assert [f.text for f in await store.facts()] == ["El usuario se llama Camilo."]
+    assert (await store.recent_messages(1))[0].text == "¡Mucho gusto, Camilo!"
+
+
+async def test_repeated_note_is_not_duplicated(store):
+    note = "<recordar>Prefiere el café sin azúcar.</recordar>"
+    for _ in range(2):
+        await collect(make_conversation(FakeBrain(["Listo. ", note]), store), "café")
+
     assert [f.text for f in await store.facts()] == ["Prefiere el café sin azúcar."]
+
+
+class FakeWeather:
+    def __init__(self, error=None):
+        self.error = error
+        self.calls = []
+
+    async def forecast(self, place, days):
+        self.calls.append((place, days))
+        if self.error:
+            raise WeatherError(self.error)
+        return {"lugar": "Villavicencio, Meta, Colombia", "ahora": {"temperatura_c": 28}}
+
+
+def conversation_with_weather(brain, store, weather):
+    return Conversation(
+        brain,
+        memory=store,
+        meter=store,
+        monthly_budget_usd=50,
+        budget_warning_usd=40,
+        weather=weather,
+    )
+
+
+async def test_weather_tool_answers_with_the_forecast(store):
+    weather = FakeWeather()
+    brain = FakeBrain(["ok"])
+    await collect(conversation_with_weather(brain, store, weather), "¿clima?")
+    [tool] = brain.requests[0].tools
+
+    result = await tool.handler({"lugar": " Villavicencio ", "dias": 3})
+
+    assert tool.name == "clima"
+    assert weather.calls == [("Villavicencio", 3)]
+    assert json.loads(result)["ahora"]["temperatura_c"] == 28
+
+
+async def test_weather_tool_errors_are_reported_to_the_brain(store):
+    brain = FakeBrain(["ok"])
+    await collect(
+        conversation_with_weather(brain, store, FakeWeather("No encontré el lugar.")), "x"
+    )
+    [tool] = brain.requests[0].tools
+
+    with pytest.raises(ValueError, match="No encontré"):
+        await tool.handler({"lugar": "Ningunaparte", "dias": 1})
+    with pytest.raises(ValueError, match="Falta el lugar"):
+        await tool.handler({"lugar": "", "dias": 1})
 
 
 async def test_brain_error_is_reported_and_partial_answer_saved(store):
@@ -108,7 +165,7 @@ async def test_interrupted_answer_is_saved(store):
     brain = FakeBrain(["Primera parte. ", "Segunda parte."])
     replies = make_conversation(brain, store).reply("cuéntame algo")
 
-    assert await anext(replies) == TextChunk("Primera parte. ")
+    assert await anext(replies) == TextChunk("Primera parte.")
     await replies.aclose()  # el usuario tocó "parar"
 
     assert (await store.recent_messages(1))[0].text == "Primera parte."

@@ -15,21 +15,22 @@ normalmente de una a tres frases. Extiéndete solo si te lo piden o si el tema l
 
 Memoria:
 - Cuando el usuario te cuente algo duradero e importante sobre sí mismo (su nombre, \
-preferencias, rutinas, personas cercanas, metas), guárdalo con la herramienta remember, \
-en una sola frase y en tercera persona. No guardes datos triviales o pasajeros, ni algo \
-que ya sabes.
+preferencias, rutinas, personas cercanas, metas, dónde vive), anótalo al final de tu \
+respuesta así: <recordar>el dato en una frase, en tercera persona</recordar>. Una nota por \
+dato. El usuario no ve ni escucha estas notas, así que no las menciones.
+- No anotes datos triviales o pasajeros, ni algo que ya sabes.
 - Usa lo que sabes del usuario con naturalidad, sin recitarlo.
 
 Información actual:
-- Para el clima, noticias, precios, resultados o cualquier dato que pueda haber cambiado, \
-usa la búsqueda web. Si necesitas saber dónde está el usuario y no lo sabes, pregúntale.
-- Si en un mismo mensaje necesitas guardar un dato y también buscar algo, usa las dos \
-herramientas a la vez, no una después de la otra: así respondes más rápido.
+- Para el clima usa la herramienta clima, no la búsqueda web: es mucho más rápida.
+- Para noticias, precios, resultados o cualquier otro dato que pueda haber cambiado, usa \
+la búsqueda web.
+- Si necesitas saber dónde está el usuario y no lo sabes, pregúntale.
 
 Límites:
-- Por ahora solo puedes conversar, recordar y buscar en internet. Si te piden algo que \
-aún no puedes hacer (correo, agenda, controlar el computador…), dilo con naturalidad y \
-ayuda en lo que sí puedas."""
+- Por ahora solo puedes conversar, recordar, consultar el clima y buscar en internet. Si \
+te piden algo que aún no puedes hacer (correo, agenda, controlar el computador…), dilo \
+con naturalidad y ayuda en lo que sí puedas."""
 
 
 def build_system_prompt(facts: list[Fact]) -> str:

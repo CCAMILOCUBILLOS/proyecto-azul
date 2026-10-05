@@ -26,6 +26,7 @@ from azul.access import (
 )
 from azul.adapters.anthropic_brain import AnthropicBrain, UnconfiguredBrain
 from azul.adapters.deepgram import DeepgramSpeechToText, DeepgramTextToSpeech, UnconfiguredVoice
+from azul.adapters.open_meteo import OpenMeteoWeather
 from azul.adapters.sqlite_store import SqliteStore
 from azul.backup import backup_if_due
 from azul.config import Settings, get_settings
@@ -37,7 +38,7 @@ from azul.core.conversation import (
     SearchNotice,
     TextChunk,
 )
-from azul.core.ports import Brain, SpeechToText, TextToSpeech
+from azul.core.ports import Brain, SpeechToText, TextToSpeech, WeatherProvider
 from azul.core.voice import (
     Heard,
     ListeningEnded,
@@ -90,6 +91,7 @@ def create_app(
     brain: Brain | None = None,
     stt: SpeechToText | None = None,
     tts: TextToSpeech | None = None,
+    weather: WeatherProvider | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     store = SqliteStore(settings.data_dir / "azul.db")
@@ -99,6 +101,7 @@ def create_app(
         meter=store,
         monthly_budget_usd=settings.monthly_budget_usd,
         budget_warning_usd=settings.budget_warning_usd,
+        weather=weather or OpenMeteoWeather(),
     )
     if stt is None or tts is None:
         default_stt, default_tts = build_voice(settings)

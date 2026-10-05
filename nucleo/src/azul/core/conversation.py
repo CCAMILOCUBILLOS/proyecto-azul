@@ -1,5 +1,6 @@
 """Conversación: une memoria, cerebro y control de gasto en cada mensaje."""
 
+import json
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
@@ -9,6 +10,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from azul.core.effort import choose_effort
+from azul.core.notes import FactNotes
 from azul.core.persona import build_system_prompt
 from azul.core.ports import (
     Brain,
@@ -21,6 +23,8 @@ from azul.core.ports import (
     ToolSpec,
     Usage,
     UsageMeter,
+    WeatherError,
+    WeatherProvider,
 )
 
 log = logging.getLogger(__name__)
@@ -81,6 +85,7 @@ class Conversation:
         *,
         monthly_budget_usd: float,
         budget_warning_usd: float,
+        weather: WeatherProvider | None = None,
         now: Callable[[], datetime] = datetime.now,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -89,23 +94,39 @@ class Conversation:
         self._meter = meter
         self._budget = monthly_budget_usd
         self._warning = budget_warning_usd
+        self._weather = weather
         self._now = now
         self._clock = clock
         self._last_brain_call: float | None = None
-        self._remember_tool = ToolSpec(
-            name="remember",
-            description=(
-                "Guarda un dato duradero e importante sobre el usuario para recordarlo en "
-                "futuras conversaciones. Escríbelo en una frase, en tercera persona."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {"fact": {"type": "string", "description": "El dato a recordar."}},
-                "required": ["fact"],
-                "additionalProperties": False,
-            },
-            handler=self._remember,
-        )
+        # Mismo orden y definición en cada solicitud: así las herramientas quedan en caché.
+        self._tools: list[ToolSpec] = []
+        if weather is not None:
+            self._tools.append(
+                ToolSpec(
+                    name="clima",
+                    description=(
+                        "Clima actual y pronóstico de un lugar (Open-Meteo). Úsala para cualquier "
+                        "pregunta del clima en vez de la búsqueda web: es mucho más rápida."
+                    ),
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "lugar": {
+                                "type": "string",
+                                "description": "Ciudad, y si ayuda, región o país. "
+                                "Ej.: 'Villavicencio, Colombia'.",
+                            },
+                            "dias": {
+                                "type": "integer",
+                                "description": "Días de pronóstico, de 1 a 7.",
+                            },
+                        },
+                        "required": ["lugar", "dias"],
+                        "additionalProperties": False,
+                    },
+                    handler=self._weather_tool,
+                )
+            )
 
     async def reply(self, user_text: str) -> AsyncIterator[ReplyEvent]:
         spent = await self._meter.month_total_usd()
@@ -119,11 +140,12 @@ class Conversation:
             messages=_starting_with_user(await self._memory.recent_messages(HISTORY_LIMIT)),
             effort=choose_effort(user_text),
             context=self._context(),
-            tools=[self._remember_tool],
+            tools=self._tools,
         )
         self._last_brain_call = self._clock()
 
         parts: list[str] = []
+        notes = FactNotes()
         announced_search = False
         try:
             # aclosing: si el usuario interrumpe, el cerebro se cierra de inmediato.
@@ -136,8 +158,16 @@ class Conversation:
                             announced_search = True
                             yield SearchNotice()
                     else:
-                        parts.append(event)
-                        yield TextChunk(event)
+                        visible, facts = notes.feed(event)
+                        for fact in facts:
+                            await self._save_fact(fact)
+                        if visible:
+                            parts.append(visible)
+                            yield TextChunk(visible)
+            rest = notes.flush()
+            if rest:
+                parts.append(rest)
+                yield TextChunk(rest)
         except BrainError as error:
             yield ErrorNotice(str(error))
         except Exception:
@@ -172,21 +202,30 @@ class Conversation:
         request = BrainRequest(
             system=build_system_prompt(await self._memory.facts()),
             messages=_starting_with_user(history),
-            tools=[self._remember_tool],
+            tools=self._tools,
         )
         usage = await self._brain.prewarm(request)
         if usage:
             await self._meter.record(usage)
 
-    async def _remember(self, tool_input: dict[str, Any]) -> str:
-        fact = tool_input.get("fact")
-        if not isinstance(fact, str) or not fact.strip():
-            raise ValueError("El dato está vacío.")
-        fact = fact.strip()
+    async def _save_fact(self, fact: str) -> None:
         if len(fact) > MAX_FACT_CHARS:
-            raise ValueError(f"El dato es demasiado largo (máximo {MAX_FACT_CHARS} caracteres).")
-        is_new = await self._memory.add_fact(Fact(fact))
-        return "Guardado." if is_new else "Ya lo tenías guardado."
+            log.warning("Dato de %d caracteres descartado por largo", len(fact))
+            return
+        await self._memory.add_fact(Fact(fact))
+
+    async def _weather_tool(self, tool_input: dict[str, Any]) -> str:
+        assert self._weather is not None
+        place = tool_input.get("lugar")
+        if not isinstance(place, str) or not place.strip():
+            raise ValueError("Falta el lugar.")
+        days = tool_input.get("dias")
+        days = days if isinstance(days, int) else 1
+        try:
+            forecast = await self._weather.forecast(place.strip(), days)
+        except WeatherError as error:
+            raise ValueError(str(error)) from error
+        return json.dumps(forecast, ensure_ascii=False)
 
     def _context(self) -> str:
         now = self._now()

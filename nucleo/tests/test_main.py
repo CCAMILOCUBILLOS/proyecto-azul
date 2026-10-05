@@ -114,7 +114,8 @@ def test_voice_turn_over_websocket(settings):
 
     assert stt.received == [b"pcm-1", b"pcm-2"]
     assert {"tipo": "escuchado", "texto": "¿Cómo estás?", "final": True} in received
-    assert {"tipo": "texto", "texto": "¡Muy bien! "} in received
+    texts = [r["texto"] for r in received if isinstance(r, dict) and r["tipo"] == "texto"]
+    assert "".join(texts) == "¡Muy bien! ¿Y tú?"
     assert [r for r in received if isinstance(r, bytes)] == [
         b"<\xc2\xa1Muy bien!>",
         b"<\xc2\xbfY t\xc3\xba?>",
