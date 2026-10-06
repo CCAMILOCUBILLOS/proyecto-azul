@@ -311,8 +311,8 @@ def _voice_event_to_dict(event: VoiceEvent) -> dict[str, Any]:
             return {"tipo": "nada_escuchado"}
         case ListeningEnded():
             return {"tipo": "escucha_terminada"}
-        case NotForAzul():
-            return {"tipo": "ignorado"}
+        case NotForAzul(had_words):
+            return {"tipo": "ignorado", "con_palabras": had_words}
         case WakeOnly():
             return {"tipo": "activado"}
         case _:

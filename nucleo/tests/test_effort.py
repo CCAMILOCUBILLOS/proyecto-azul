@@ -13,10 +13,11 @@ from azul.core.ports import Effort
         ("Explícame cómo funciona una hipoteca", Effort.MEDIUM),
         ("Analiza a fondo si me conviene cambiar de trabajo", Effort.HIGH),
         ("dime paso a paso cómo preparo una lasaña", Effort.HIGH),
+        # Por voz casi todo es largo: un mensaje largo sin pedir razonamiento piensa poco.
         (
             "ayer estuve pensando en lo que me dijiste sobre el viaje y creo que al final "
             "sí vamos a ir en diciembre con mi familia",
-            Effort.MEDIUM,
+            Effort.LOW,
         ),
     ],
 )

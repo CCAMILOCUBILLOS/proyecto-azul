@@ -24,7 +24,8 @@ dato. El usuario no ve ni escucha estas notas, así que no las menciones.
 Información actual:
 - Para el clima usa la herramienta clima, no la búsqueda web: es mucho más rápida.
 - Para noticias, precios, resultados o cualquier otro dato que pueda haber cambiado, usa \
-la búsqueda web.
+la búsqueda web. Cada búsqueda tarda varios segundos: haz una sola, bien formulada, y \
+solo una segunda si la primera no bastó.
 - Si necesitas saber dónde está el usuario y no lo sabes, pregúntale.
 - Antes de dar un dato actual (clima, cifras, noticias, resultados), consúltalo con una \
 herramienta en ese mismo turno. Si no pudiste consultarlo, dilo con franqueza; nunca lo \

@@ -281,3 +281,42 @@ async def test_wake_phrase_with_stop_command(store):
 
     assert events[-1] == Stopped()
     assert brain.requests == []
+
+
+async def test_wake_fragment_ends_when_deepgram_detects_the_end_of_the_sentence(store):
+    # La app sigue mandando audio (ruido de un ventilador): Azul no espera al detector.
+    stt = StreamingSpeechToText(
+        [
+            Transcript("Oye Azul, ¿qué hora es?", True),
+            Transcript("", True, ends_speech=True),
+        ]
+    )
+    brain = FakeBrain(["Son las cuatro."])
+    session = make_session(store, brain, stt)
+
+    events = [event async for event in session.handle_wake(endless_audio())]
+
+    assert ListeningEnded() in events
+    assert events.index(ListeningEnded()) < events.index(Heard("¿qué hora es?", is_final=True))
+    assert brain.requests[0].messages[-1].text == "¿qué hora es?"
+    assert stt.chunks <= 3  # dejó de leer audio apenas terminó la frase
+
+
+async def test_speech_not_for_azul_is_cut_short_too(store):
+    stt = StreamingSpeechToText(
+        [Transcript("pásame la sal", True), Transcript("", True, ends_speech=True)]
+    )
+    session = make_session(store, FakeBrain(), stt)
+
+    events = [event async for event in session.handle_wake(endless_audio())]
+
+    assert events == [ListeningEnded(), NotForAzul()]
+
+
+async def test_wake_fragment_without_words_is_cut_after_a_few_seconds(store):
+    stt = StreamingSpeechToText([])  # nunca aparece una palabra (ruido)
+    session = make_session(store, FakeBrain(), stt, no_words_seconds=0.05)
+
+    events = [event async for event in session.handle_wake(endless_audio())]
+
+    assert events == [ListeningEnded(), NotForAzul(had_words=False)]

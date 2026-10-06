@@ -25,6 +25,8 @@ PREWARM_WAIT_SECONDS = 1.0
 # Escucha: se corta si no se oye nada en 8 s, o tras 60 s hablando.
 NO_SPEECH_SECONDS = 8.0
 MAX_LISTEN_SECONDS = 60.0
+# "Oye Azul": un fragmento sin ninguna palabra en este tiempo se corta (era ruido).
+NO_WORDS_SECONDS = 3.0
 
 
 @dataclass(frozen=True)
@@ -59,7 +61,14 @@ class ListeningEnded:
 
 @dataclass(frozen=True)
 class NotForAzul:
-    """Modo "Oye Azul": la voz captada no empezaba con la activación."""
+    """Modo "Oye Azul": lo captado no era para Azul.
+
+    had_words=False indica que ni siquiera tenía palabras (era ruido): la app puede
+    aprender ese nivel como ruido de fondo. Si tenía palabras, no, porque entonces
+    dejaría de oír al usuario hablando a ese volumen.
+    """
+
+    had_words: bool = True
 
 
 @dataclass(frozen=True)
@@ -103,7 +112,9 @@ class VoiceSession:
         filler_seconds: float = FILLER_SECONDS,
         no_speech_seconds: float = NO_SPEECH_SECONDS,
         max_listen_seconds: float = MAX_LISTEN_SECONDS,
+        no_words_seconds: float = NO_WORDS_SECONDS,
     ) -> None:
+        self._no_words_seconds = no_words_seconds
         self._conversation = conversation
         self._stt = stt
         self._tts = tts
@@ -151,6 +162,8 @@ class VoiceSession:
         if not announced_end:
             yield ListeningEnded()
         text = " ".join(finals).strip()
+        # Sin el contenido: solo cómo terminó el turno, para poder diagnosticar.
+        log.info("Turno de voz: %s", "respondiendo" if text else "no se oyó nada")
         if not text:
             yield NothingHeard()
             return
@@ -167,36 +180,58 @@ class VoiceSession:
         """
         prewarm: asyncio.Task[None] | None = None
         finals: list[str] = []
+        # El fin de la frase lo decide Deepgram, no el detector del dispositivo: en un
+        # cuarto con ruido (ventilador, TV) el detector no "oye" el silencio y el
+        # fragmento se alargaba hasta 17 s antes de responder.
+        stop_listening = asyncio.Event()
+        heard_words = asyncio.Event()
+        # Si en unos segundos no aparece ninguna palabra, era ruido (un ventilador, un
+        # golpe): se corta para no seguir pagando por escucharlo.
+        no_words = asyncio.create_task(
+            self._cut_if_no_words(heard_words, stop_listening, self._no_words_seconds)
+        )
         try:
-            async with aclosing(self._stt.transcribe(audio)) as transcripts:
+            async with aclosing(self._stt.transcribe(_until(audio, stop_listening))) as transcripts:
                 async for item in transcripts:
                     if isinstance(item, Usage):
                         await self._meter.record(item)
                         continue
-                    if not item.text:
-                        continue
-                    heard = " ".join([*finals, item.text])
-                    if item.is_final:
-                        finals.append(item.text)
-                    command = split_wake_phrase(heard)
-                    if command is None:
-                        continue
-                    if prewarm is None:
-                        # Se prepara la caché solo cuando de verdad llaman a Azul.
-                        prewarm = self._start_background(self._prewarm())
-                    yield Heard(command, is_final=False)
+                    if item.text:
+                        heard_words.set()
+                        heard = " ".join([*finals, item.text])
+                        if item.is_final:
+                            finals.append(item.text)
+                        command = split_wake_phrase(heard)
+                        if command is not None:
+                            if prewarm is None:
+                                # Se prepara la caché solo cuando de verdad llaman a Azul.
+                                prewarm = self._start_background(self._prewarm())
+                            yield Heard(command, is_final=False)
+                    if item.ends_speech and finals and not stop_listening.is_set():
+                        # Terminó la frase: se deja de escuchar (y de pagar) en el acto.
+                        stop_listening.set()
+                        yield ListeningEnded()
         except VoiceError as error:
             yield ErrorNotice(str(error))
             return
+        finally:
+            no_words.cancel()
 
+        if not heard_words.is_set() and stop_listening.is_set():
+            # Lo cortó el temporizador: hay que avisar a la app que deje de enviar.
+            yield ListeningEnded()
         command = split_wake_phrase(" ".join(finals))
         # Sin el contenido: lo que no era para Azul no se guarda en ninguna parte.
         log.info(
             "Fragmento de voz (modo Oye Azul): %s",
-            "ignorado" if command is None else "activación",
+            "activación"
+            if command is not None
+            else "ignorado"
+            if heard_words.is_set()
+            else "ignorado (sin palabras)",
         )
         if command is None:
-            yield NotForAzul()
+            yield NotForAzul(had_words=heard_words.is_set())
             return
         if not command:
             yield WakeOnly()
@@ -287,6 +322,13 @@ class VoiceSession:
                 else:
                     audio.extend(chunk)
         return bytes(audio)
+
+    @staticmethod
+    async def _cut_if_no_words(heard: asyncio.Event, stop: asyncio.Event, seconds: float) -> None:
+        try:
+            await asyncio.wait_for(heard.wait(), seconds)
+        except TimeoutError:
+            stop.set()
 
     async def _listening_timer(self, stop: asyncio.Event, heard: asyncio.Event) -> None:
         """Deja de escuchar si el usuario no dice nada, o si habla demasiado tiempo."""

@@ -284,6 +284,9 @@ function alEventoDeVoz(evento: EventoVoz): void {
       agregarBurbuja("aviso", evento.tipo === "gasto" ? avisoDeGasto(evento) : evento.mensaje);
       break;
     case "parado":
+      // Si ya estamos escuchando, es solo la confirmación de que nuestro turno nuevo
+      // interrumpió al anterior (p. ej. tras "Oye Azul"): la conversación sigue.
+      if (voz.escuchando) break;
       // "Para", "adiós", "eso es todo"… o ■: se termina la conversación.
       terminarBurbujaDeVoz(true);
       terminarConversacion();

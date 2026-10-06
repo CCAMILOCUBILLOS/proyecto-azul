@@ -30,6 +30,7 @@ export class DetectorDeVoz {
   private enFragmento = false;
   private silencio = 0;
   private largo = 0;
+  private nivelesDelFragmento: number[] = [];
 
   constructor(private readonly acciones: AccionesDetector) {}
 
@@ -53,6 +54,17 @@ export class DetectorDeVoz {
     this.procesar(bloque, puedeEmpezar);
   }
 
+  /**
+   * El último fragmento era ruido sin palabras (lo confirma Azul): su nivel típico pasa a
+   * ser el ruido de fondo, para que un ventilador no abra fragmentos una y otra vez.
+   */
+  aprenderRuido(): void {
+    if (this.nivelesDelFragmento.length === 0) return;
+    const ordenados = [...this.nivelesDelFragmento].sort((a, b) => a - b);
+    this.ruidoDeFondo = Math.max(this.ruidoDeFondo, ordenados[Math.floor(ordenados.length / 2)]);
+    this.nivelesDelFragmento = [];
+  }
+
   /** Olvida el fragmento en curso (p. ej. si el usuario tocó el micrófono). */
   reiniciar(): void {
     this.enFragmento = false;
@@ -67,6 +79,7 @@ export class DetectorDeVoz {
     const umbral = Math.max(VOLUMEN_MINIMO, this.ruidoDeFondo * VECES_SOBRE_EL_RUIDO);
     const hayVoz = nivel > umbral;
     this.nivelRelativo = nivel / umbral;
+    if (this.enFragmento) this.nivelesDelFragmento.push(nivel);
 
     if (!this.enFragmento) {
       // Se aprende el ruido de fondo solo cuando nadie habla.
@@ -76,6 +89,7 @@ export class DetectorDeVoz {
       this.bloquesConVoz = hayVoz ? this.bloquesConVoz + 1 : 0;
       if (this.bloquesConVoz >= BLOQUES_CON_VOZ_PARA_EMPEZAR && puedeEmpezar) {
         this.enFragmento = true;
+        this.nivelesDelFragmento = [];
         this.silencio = 0;
         this.largo = 0;
         this.acciones.empezar(this.previos);

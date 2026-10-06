@@ -89,10 +89,24 @@
 - Arreglo: el registro técnico va a `datos/azul.log`. Un clic en la ventana negra congelaba a Azul.
 - 160 pruebas automáticas. Probado por el usuario: la conversación fluye y ya no duda de lo que busca.
 
+## v0.3: Azul en el portátil (pendiente de cerrar)
+- **Cliente de escritorio** (ADR 0028): arranca con `Iniciar Azul.cmd`; escucha por el micrófono del portátil y responde por sus parlantes, sin abrir la app.
+- **Ctrl + Alt + A** a cualquier hora: tono, pregunta y modo conversación. Probado por el usuario: funciona.
+- **"Oye Azul"** de 07:00 a 22:00. El fin de la frase lo decide Deepgram (no el ruido del cuarto); el ruido sin palabras se corta a los 3 s y el detector aprende su nivel. ⏳ Confirmar el 2026-10-06 tras corregir el tono.
+- Velocidad: esfuerzo bajo por defecto, precalentamiento y "Déjame buscarlo" al buscar.
+- 188 pruebas automáticas.
+
 ## Próximos pasos
-- **Siguiente:** Azul en el portátil en segundo plano (escuchar con la pantalla apagada y responder por los parlantes).
-- Pendiente de seguridad: el usuario cambia `AZUL_ACCESS_KEY` (quedó visible en una captura) y la actualiza en la app y en el atajo.
-- Confirmar los criterios pendientes del MVP (Android, memoria al día siguiente).
-- El usuario debe evitar que el portátil se suspenda mientras está enchufado (configuración de energía de Windows; lo hace el usuario).
+- Cerrar la v0.3: confirmar "Oye Azul" en el portátil; commit, subida a GitHub y etiqueta `v0.3.0` con aprobación del usuario.
+- La siguiente capacidad la elige el usuario (ADR 0017): productividad con Google y Microsoft, más control del PC, conocimiento (documentos), casa inteligente (en pausa).
+- Mejora técnica pendiente: Deepgram tarda 3–5 s en dar por terminada la frase; se puede acortar.
+
+### Dejados en pausa por el usuario (2026-10-05)
+- Cambiar `AZUL_ACCESS_KEY` (quedó visible en una captura) y actualizarla en la app y en el atajo.
+- Evitar que el portátil se suspenda enchufado (configuración de energía de Windows).
+- Instalar Tailscale en el Android (criterio 1 del MVP).
+
+### Otros pendientes
+- Confirmar la memoria al día siguiente ("¿cómo me llamo?").
 - Descartada por ahora: bajar el silencio de fin a 0,8 s. Pendiente de evaluar: voz por streaming de Deepgram.
 - Optimización de costo: la ventana del historial (40 mensajes) se corre en cada turno y rehace la caché de los mensajes; conviene moverla por bloques.

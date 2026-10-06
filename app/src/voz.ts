@@ -6,7 +6,7 @@ import { DetectorDeVoz } from "./deteccion";
 export type EventoVoz =
   | { tipo: "turno" }
   | { tipo: "escucha_terminada" }
-  | { tipo: "ignorado" }
+  | { tipo: "ignorado"; con_palabras?: boolean }
   | { tipo: "activado" }
   | { tipo: "escuchado"; texto: string; final: boolean }
   | { tipo: "texto"; texto: string }
@@ -182,8 +182,17 @@ export class Voz {
         }
         const evento = JSON.parse(mensaje.data as string) as EventoVoz;
         if (evento.tipo === "turno") this.aceptarAudio = true;
-        // Azul detectó que terminaste de hablar: se apaga el micrófono.
-        if (evento.tipo === "escucha_terminada") this.terminar();
+        // Ruido sin palabras: el detector aprende su nivel (nunca de una conversación ajena).
+        if (evento.tipo === "ignorado" && evento.con_palabras === false) this.detector?.aprenderRuido();
+        // Azul detectó que terminaste de hablar: se apaga el micrófono (o se cierra el
+        // fragmento de "Oye Azul" sin esperar a que el detector oiga el silencio).
+        if (evento.tipo === "escucha_terminada") {
+          if (this.detector?.escuchandoFragmento) {
+            this.detector.reiniciar();
+            this.enviar({ tipo: "activacion_fin" });
+          }
+          this.terminar();
+        }
         this.alEvento(evento);
       };
     });

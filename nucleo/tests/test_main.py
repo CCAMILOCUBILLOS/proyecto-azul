@@ -181,7 +181,11 @@ def test_wake_mode_ignores_other_speech_over_websocket(settings):
         socket.send_json({"tipo": "activacion_fin"})
         received = receive_until_end(socket)
 
-    assert received == [{"tipo": "turno"}, {"tipo": "ignorado"}, {"tipo": "fin"}]
+    assert received == [
+        {"tipo": "turno"},
+        {"tipo": "ignorado", "con_palabras": True},
+        {"tipo": "fin"},
+    ]
 
 
 def test_preguntar_returns_the_whole_answer_as_text(settings):

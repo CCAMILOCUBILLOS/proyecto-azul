@@ -12,6 +12,8 @@ if not exist "app\dist\index.html" (
 
 echo Iniciando Azul...
 cd nucleo
+rem Cliente de voz del portatil (atajo Ctrl+Alt+A y "Oye Azul"); se apaga al cerrar esta ventana.
+start "" /b uv run --no-sync python -m azul.escritorio
 uv run --quiet azul
 goto :eof
 

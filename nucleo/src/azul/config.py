@@ -45,7 +45,8 @@ class Settings(BaseSettings):
     # Funciones beta de Anthropic; se pueden apagar si el proveedor las rechaza.
     anthropic_fallbacks: bool = True
     anthropic_per_message_effort: bool = True
-    web_search_max_uses: int = Field(default=3, ge=0)
+    # Cada búsqueda tarda 8-12 s: 2 como máximo por respuesta (antes 3).
+    web_search_max_uses: int = Field(default=2, ge=0)
 
     # Oído y voz (ADR 0006). Voz elegida por el usuario el 2026-10-05: Gloria (colombiana).
     stt_model: str = "nova-3"
@@ -55,6 +56,13 @@ class Settings(BaseSettings):
     # Control de gasto (R3).
     monthly_budget_usd: float = Field(default=50.0, gt=0)
     budget_warning_usd: float = Field(default=40.0, gt=0)
+
+    # Cliente de voz del portátil (ADR 0028): atajo siempre; "Oye Azul" solo en horario.
+    escritorio_activo: bool = True
+    escritorio_atajo: str = "<ctrl>+<alt>+a"
+    escritorio_oye_azul: bool = True
+    escritorio_desde: str = "07:00"
+    escritorio_hasta: str = "22:00"
 
     # Respaldos de la memoria (ADR 0022): en el portátil y en OneDrive, por decisión
     # del usuario. Sin OneDrive, solo en el portátil.

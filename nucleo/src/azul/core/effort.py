@@ -1,6 +1,8 @@
 """Elige cuánto debe pensar el cerebro para cada mensaje (ADR 0014).
 
-Regla simple a propósito: se medirá con uso real antes de refinarla.
+Por defecto, poco: en una conversación por voz, cada segundo de razonamiento se
+nota como silencio. Más solo cuando el pedido lo amerita. (Antes, cualquier
+mensaje largo pensaba más, y por voz casi todo es largo.)
 """
 
 from azul.core.ports import Effort
@@ -15,7 +17,7 @@ _DEEP_HINTS = (
     "analiza bien",
 )
 
-# Señales de que la pregunta pide razonar, no solo charlar.
+# Señales de que la pregunta pide razonar, no solo responder.
 _REASONING_HINTS = (
     "por qué",
     "porqué",
@@ -32,8 +34,6 @@ _REASONING_HINTS = (
     "calcula",
 )
 
-_SHORT_MESSAGE_WORDS = 12
-
 
 def choose_effort(text: str) -> Effort:
     normalized = text.lower()
@@ -41,6 +41,4 @@ def choose_effort(text: str) -> Effort:
         return Effort.HIGH
     if any(hint in normalized for hint in _REASONING_HINTS):
         return Effort.MEDIUM
-    if len(normalized.split()) <= _SHORT_MESSAGE_WORDS:
-        return Effort.LOW
-    return Effort.MEDIUM
+    return Effort.LOW
