@@ -104,6 +104,10 @@ _SALTAR = {
 _SECRETO = re.compile(r"(^\.env)|key|clave|password|contrase|secret|token|\.pem$|\.pfx$", re.I)
 
 
+def parece_secreto(nombre: str) -> bool:
+    return bool(_SECRETO.search(nombre))
+
+
 class DocumentosWindows:
     def __init__(self, raices: list[Path], salida: Path) -> None:
         # Las raíces se recorren en orden: primero las más probables.
@@ -161,7 +165,7 @@ class DocumentosWindows:
     # --- Leer ---
 
     def _leer(self, ruta: Path) -> str:
-        if _SECRETO.search(ruta.name):
+        if parece_secreto(ruta.name):
             raise DocumentosError("Ese archivo parece guardar claves; por seguridad no lo leo.")
         if not ruta.is_file():
             raise DocumentosError("No encuentro ese archivo.")

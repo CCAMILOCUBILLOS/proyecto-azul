@@ -40,4 +40,6 @@ def settings(tmp_path) -> Settings:
         app_dist_dir=tmp_path / "dist",
         backup_dir=tmp_path / "respaldos",
         backup_cloud_dir=tmp_path / "nube",
+        # Las pruebas nunca tocan el Outlook real.
+        correo_activo=False,
     )

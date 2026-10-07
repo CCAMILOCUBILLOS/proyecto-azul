@@ -114,6 +114,7 @@ def herramientas_red_nacional(
                 "additionalProperties": False,
             },
             handler=consultar,
+            strict=True,
         ),
         ToolSpec(
             name="red_nacional_ejecutar",
@@ -148,6 +149,7 @@ def herramientas_red_nacional(
                 "additionalProperties": False,
             },
             handler=ejecutar,
+            strict=True,
         ),
     ]
 

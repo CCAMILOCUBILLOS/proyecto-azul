@@ -28,3 +28,7 @@ respaldos/
 # Configuración local de herramientas (rutas de este equipo)
 .claude/
 .impeccable/hook.cache.json
+
+# Ayudante de Outlook en Optometría: su clave y su registro (ADR 0040)
+ayudante-optometria/.clave
+ayudante-optometria/ayudante.log

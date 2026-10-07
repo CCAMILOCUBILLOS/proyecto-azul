@@ -113,7 +113,7 @@ async def test_runs_client_tools_and_continues():
         "role": "user",
         "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "Guardado."}],
     }
-    assert api.calls[1]["tools"][1]["strict"] is True
+    assert "strict" not in api.calls[1]["tools"][1]  # solo las que lo piden
 
 
 async def test_invalid_tool_input_is_reported_as_error():
@@ -254,3 +254,26 @@ def test_sonnet_5_5_costs_half_of_opus_5_5():
     assert cost_usd("claude-sonnet-5-5", tokens) == pytest.approx(
         (1000 * 2 + 100 * 10 + 10_000 * 0.20) / 1_000_000
     )
+
+
+async def test_internal_jobs_skip_web_search_and_stop_after_the_tool():
+    registrados = []
+
+    async def registrar(entrada):
+        registrados.append(entrada)
+        return "Registrado."
+
+    tool = ToolSpec("registrar", "Registra.", {"type": "object"}, registrar)
+    block = tool_use("registrar", {"correos": []})
+    brain, api = make_brain(
+        [([], final_message("tool_use", content=[block])), (["nunca"], final_message())]
+    )
+
+    await collect(
+        brain,
+        make_request(tools=[tool], busqueda_web=False, terminar_tras_herramientas=True),
+    )
+
+    assert registrados == [{"correos": []}]
+    assert len(api.calls) == 1  # sin la vuelta extra
+    assert [t["name"] for t in api.calls[0]["tools"]] == ["registrar"]  # sin búsqueda web

@@ -130,6 +130,23 @@
 - Mientras Azul responde, el usuario puede hablarle encima: si es su voz (huella), Azul se calla y atiende lo nuevo.
 - ⏳ Falta: que el usuario enseñe su voz en la app y pruebe con su voz real.
 
+## Correos en Outlook (ADR 0037)
+- Azul busca y lee correos, y deja correos nuevos o respuestas en Borradores de Outlook clásico; nunca envía.
+- Búsqueda probada en real: 3 a 5 s, con o sin tildes.
+- ⏳ Falta probar la creación de borradores: el asistente de activación de Office estaba abierto y bloqueaba crear correos.
+
+## Ayudante de Outlook en Optometría (ADR 0040)
+- El correo real está en Optometría: un ayudante allá maneja su Outlook y Azul (en el portátil) le pide por Tailscale, con clave propia. Probado de punta a punta en el portátil.
+- ⏳ Falta instalarlo en Optometría, publicarlo con Tailscale serve y conectarlo desde el portátil.
+
+## Revisión y prioridades de correo (ADR 0039)
+- Cada 10 minutos clasifica lo nuevo (urgente/alta/normal/baja), arma el itinerario, pone categorías de color en Outlook y alerta lo urgente por WhatsApp (texto y voz). Aprende con preguntas y reglas.
+- ⏳ Falta: que Outlook quede sin la ventana de activación de Office, el repaso inicial con el usuario y configurar WhatsApp para las alertas.
+
+## WhatsApp Business (ADR 0038)
+- Construido y probado con dobles: conversación por contacto, reglas aprendidas, consultas al usuario por WhatsApp, receptor aparte con firma de Meta.
+- ⏳ Falta: número para Azul (o el de prueba de Meta), app en Meta for Developers, variables en `.env` y Tailscale Funnel.
+
 ## Próximos pasos
 - Cerrar la v0.3: confirmar "Oye Azul" en el portátil; commit, subida a GitHub y etiqueta `v0.3.0` con aprobación del usuario.
 - La siguiente capacidad la elige el usuario (ADR 0017): productividad con Google y Microsoft, más control del PC, conocimiento (documentos), casa inteligente (en pausa).

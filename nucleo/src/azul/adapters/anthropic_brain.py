@@ -134,13 +134,11 @@ class AnthropicBrain:
             if final.stop_reason != "tool_use" or not tool_uses:
                 return
 
+            resultados = [await _run_tool(block, request.tools) for block in tool_uses]
+            if request.terminar_tras_herramientas:
+                return
             messages.append({"role": "assistant", "content": final.content})
-            messages.append(
-                {
-                    "role": "user",
-                    "content": [await _run_tool(block, request.tools) for block in tool_uses],
-                }
-            )
+            messages.append({"role": "user", "content": resultados})
 
         log.warning("Se alcanzó el máximo de %d vueltas de herramientas", MAX_ROUNDS)
 
@@ -220,11 +218,17 @@ class AnthropicBrain:
                 {"type": "text", "text": request.system, "cache_control": {"type": "ephemeral"}}
             ],
             "tools": [
-                {
-                    "type": "web_search_20260209",
-                    "name": "web_search",
-                    "max_uses": self._web_search_max_uses,
-                },
+                *(
+                    [
+                        {
+                            "type": "web_search_20260209",
+                            "name": "web_search",
+                            "max_uses": self._web_search_max_uses,
+                        }
+                    ]
+                    if request.busqueda_web
+                    else []
+                ),
                 *(_tool_definition(tool) for tool in request.tools),
             ],
             "output_config": {
@@ -251,12 +255,13 @@ def _is_search(event: Any) -> bool:
 def _tool_definition(tool: ToolSpec) -> dict[str, Any]:
     # Sin eager_input_streaming: las entradas son una frase corta y así la API
     # valida el JSON completo antes de entregarlo.
-    return {
+    definicion = {
         "name": tool.name,
         "description": tool.description,
         "input_schema": tool.input_schema,
-        "strict": True,
     }
+    # Todas en estricto superaban el límite de Anthropic ("compiled grammar is too large").
+    return {**definicion, "strict": True} if tool.strict else definicion
 
 
 async def _run_tool(block: Any, tools: list[ToolSpec]) -> dict[str, Any]:

@@ -29,7 +29,13 @@ description: Redactar o corregir textos y documentos del usuario (correos de tra
 - Saludo ("Cordial saludo," o "Buenos días, [nombre]:").
 - Primer párrafo: el motivo, sin rodeos. Luego los detalles necesarios (fechas, nombres, cifras), en lista si son varios.
 - Cierre con la acción esperada y plazo si aplica ("Quedo atento a su confirmación.").
-- Firma con el nombre del usuario y, si lo sabes, su cargo y empresa.
+- Firma con el nombre del usuario y, si lo sabes, su cargo y empresa (en Outlook no: la pone Outlook).
+
+**Correos en Outlook** (cuando pidan un correo, salvo que quieran solo el texto)
+- Correo nuevo: déjalo con `correo_borrador`. Para responder uno que llegó: encuéntralo con `correo_buscar` (palabras del remitente o del asunto), léelo con `correo_leer` y deja la respuesta con `correo_responder` (`a_todos` solo si la conversación es con varias personas o lo piden).
+- En `cuerpo`, termina con la despedida ("Cordialmente,") y **sin firma**: Outlook agrega la del usuario.
+- Si Outlook no reconoce a un destinatario, dilo y pide su correo.
+- Responde en corto: a quién va, el asunto y que quedó en **Borradores** para que lo revise y lo envíe. Nunca digas que lo enviaste.
 
 **Informes, actas y documentos**
 - Título, fecha y destinatario o propósito.

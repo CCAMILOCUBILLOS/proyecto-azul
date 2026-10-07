@@ -207,3 +207,11 @@ async def test_adapter_explains_when_the_dashboard_is_off():
 
     with pytest.raises(RedNacionalError, match="PC de Optometría"):
         await tablero.consultar("resumen", {})
+
+
+def test_only_red_nacional_tools_use_strict_mode():
+    from azul.adapters.anthropic_brain import _tool_definition
+    from azul.core.red_nacional import herramientas_red_nacional
+
+    for herramienta in herramientas_red_nacional(object(), lambda _: None):
+        assert _tool_definition(herramienta)["strict"] is True

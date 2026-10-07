@@ -56,6 +56,24 @@ class Settings(BaseSettings):
     habilidades_dir: Path = REPO_ROOT / "habilidades"
     documentos_activos: bool = True
     documentos_salida: Path = Field(default_factory=lambda: _onedrive_dir("Documentos"))
+    # Outlook clásico del portátil: buscar, leer y dejar borradores; nunca envía (ADR 0037).
+    correo_activo: bool = True
+    # El Outlook real está en el PC de Optometría: su ayudante, por Tailscale (ADR 0040).
+    # Con esto, Azul usa ese Outlook en vez del de este equipo.
+    correo_remoto_url: str = ""
+    correo_remoto_clave: SecretStr | None = None
+    # Revisión de correos: prioridades, itinerario y alertas de lo urgente (ADR 0039).
+    correo_revisar: bool = True
+    correo_revision_minutos: float = Field(default=10, ge=2)
+    # WhatsApp Business de Meta (ADR 0038). Sin token ni número, Azul no lo usa.
+    whatsapp_token: SecretStr | None = None
+    whatsapp_numero_id: str = ""  # el "Phone number ID" de Meta (no es el teléfono)
+    whatsapp_secreto_app: SecretStr | None = None  # para comprobar que los avisos son de Meta
+    whatsapp_token_verificacion: SecretStr | None = None  # una frase que el usuario inventa
+    whatsapp_dueno: str = ""  # el número personal del usuario, p. ej. 573001234567
+    whatsapp_plantilla_aviso: str = ""  # plantilla aprobada para avisar pasadas 24 h
+    whatsapp_puerto: int = 8720  # solo el receptor de WhatsApp; Tailscale Funnel lo publica
+    whatsapp_api_version: str = "v23.0"
 
     # Oído y voz (ADR 0006). Voz elegida por el usuario el 2026-10-05: Gloria (colombiana).
     stt_model: str = "nova-3"

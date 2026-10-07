@@ -148,3 +148,17 @@ async def test_backup_from_a_newer_version_is_rejected(tmp_path, memory):
 def test_nothing_to_back_up_yet(tmp_path):
     with pytest.raises(BackupError, match="no hay memoria"):
         create_backup(tmp_path / "no-existe.db", [tmp_path])
+
+
+def test_changing_the_key_replaces_only_that_line(tmp_path):
+    from azul.cli import LETRAS_DE_CLAVE, cambiar_clave
+
+    env = tmp_path / ".env"
+    env.write_text("ANTHROPIC_API_KEY=x\nAZUL_ACCESS_KEY=vieja\nAZUL_PORT=8710\n", encoding="utf-8")
+
+    clave = cambiar_clave(env)
+
+    lineas = env.read_text(encoding="utf-8").splitlines()
+    assert lineas == ["ANTHROPIC_API_KEY=x", f"AZUL_ACCESS_KEY={clave}", "AZUL_PORT=8710"]
+    assert len(clave) == 19 and set(clave.replace("-", "")) <= set(LETRAS_DE_CLAVE)
+    assert cambiar_clave(env) != clave

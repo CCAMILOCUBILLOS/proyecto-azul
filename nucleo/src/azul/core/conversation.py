@@ -3,13 +3,14 @@
 import json
 import logging
 import time
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Literal
 
 from azul.core.effort import choose_effort
+from azul.core.herramientas_correo import herramientas_correo
 from azul.core.herramientas_documentos import herramienta_habilidades, herramientas_documentos
 from azul.core.notes import FactNotes
 from azul.core.persona import build_system_prompt
@@ -17,6 +18,7 @@ from azul.core.ports import (
     Brain,
     BrainError,
     BrainRequest,
+    Correo,
     Documentos,
     Fact,
     Habilidad,
@@ -102,6 +104,13 @@ class Conversation:
         red_nacional: RedNacional | None = None,
         habilidades: Sequence[Habilidad] = (),
         documentos: Documentos | None = None,
+        correo: Correo | None = None,
+        herramientas_extra: Sequence[ToolSpec] = (),
+        # WhatsApp (ADR 0038): con otra persona cambian las instrucciones y cada
+        # herramienta pasa por los permisos que el usuario le enseñó a Azul.
+        instrucciones: Callable[[list[Fact], Sequence[Habilidad]], str] = build_system_prompt,
+        envolver_herramienta: Callable[[ToolSpec], ToolSpec] | None = None,
+        contexto_extra: Callable[[], Awaitable[str]] | None = None,
         now: Callable[[], datetime] = datetime.now,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -153,6 +162,13 @@ class Conversation:
             self._tools.append(usar_habilidad)
         if documentos is not None:
             self._tools.extend(herramientas_documentos(documentos, self._anotar))
+        if correo is not None:
+            self._tools.extend(herramientas_correo(correo, self._anotar))
+        self._tools.extend(herramientas_extra)
+        if envolver_herramienta is not None:
+            self._tools = [envolver_herramienta(tool) for tool in self._tools]
+        self._instrucciones = instrucciones
+        self._contexto_extra = contexto_extra
 
     async def reply(self, user_text: str) -> AsyncIterator[ReplyEvent]:
         spent = await self._meter.month_total_usd()
@@ -162,10 +178,10 @@ class Conversation:
 
         await self._memory.add_message(Message("user", user_text))
         request = BrainRequest(
-            system=build_system_prompt(await self._memory.facts(), self._habilidades),
+            system=self._instrucciones(await self._memory.facts(), self._habilidades),
             messages=_for_brain(_starting_with_user(await self._history(including_new=True))),
             effort=choose_effort(user_text),
-            context=self._context(),
+            context=await self._context_completo(),
             tools=self._tools,
         )
         self._last_brain_call = self._clock()
@@ -215,6 +231,9 @@ class Conversation:
         elif spent >= self._warning:
             yield BudgetNotice("warning", spent, self._budget)
 
+    def nombres_de_herramientas(self) -> list[str]:
+        return [tool.name for tool in self._tools]
+
     async def prewarm(self) -> None:
         """Prepara la caché del cerebro mientras el usuario todavía está hablando.
 
@@ -229,7 +248,7 @@ class Conversation:
         # La misma ventana que usará reply(), sin el mensaje que aún no llega: el prefijo coincide.
         history = await self._history(including_new=False)
         request = BrainRequest(
-            system=build_system_prompt(await self._memory.facts(), self._habilidades),
+            system=self._instrucciones(await self._memory.facts(), self._habilidades),
             messages=_for_brain(_starting_with_user(history)),
             tools=self._tools,
         )
@@ -292,6 +311,10 @@ class Conversation:
         self._consulted.append(f"clima de {forecast.get('lugar', place.strip())}")
         return json.dumps(forecast, ensure_ascii=False)
 
+    async def _context_completo(self) -> str:
+        extra = await self._contexto_extra() if self._contexto_extra else ""
+        return f"{self._context()}\n\n{extra}" if extra else self._context()
+
     def _context(self) -> str:
         now = self._now()
         return (
@@ -309,9 +332,24 @@ _NOMBRES_DE_HERRAMIENTAS = {
     "crear_word": "Crear documentos Word",
     "crear_excel": "Crear Excel",
     "guardar_archivo": "Guardar páginas y código",
+    "correo_buscar": "Outlook: buscar correos",
+    "correo_leer": "Outlook: leer correos",
+    "correo_borrador": "Outlook: redactar borradores",
+    "correo_responder": "Outlook: responder en borrador",
+    "whatsapp_pendientes": "WhatsApp: pendientes",
+    "whatsapp_decidir": "WhatsApp: decidir respuestas",
+    "whatsapp_enviar": "WhatsApp: escribir a un contacto",
+    "whatsapp_contactos": "WhatsApp: contactos y reglas",
+    "whatsapp_regla": "WhatsApp: enseñar reglas",
+    "whatsapp_olvidar_regla": "WhatsApp: olvidar reglas",
     "red_nacional_consultar": "Red Nacional: consultas",
     "red_nacional_ejecutar": "Red Nacional: procesos",
 }
+
+
+def nombre_de_herramienta(nombre: str) -> str:
+    """El nombre legible de una herramienta (para la red neuronal y los avisos)."""
+    return _NOMBRES_DE_HERRAMIENTAS.get(nombre, nombre)
 
 
 def _resumen(descripcion: str) -> str:

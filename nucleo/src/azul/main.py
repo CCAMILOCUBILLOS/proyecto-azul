@@ -3,8 +3,9 @@
 import asyncio
 import json
 import logging
+import sys
 from collections.abc import AsyncIterator
-from contextlib import aclosing, suppress
+from contextlib import aclosing, asynccontextmanager, suppress
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,8 @@ from azul.access import (
     session_token,
 )
 from azul.adapters.anthropic_brain import AnthropicBrain, UnconfiguredBrain
+from azul.adapters.correo_outlook import CorreoOutlook
+from azul.adapters.correo_remoto import ejecutor_remoto
 from azul.adapters.deepgram import DeepgramSpeechToText, DeepgramTextToSpeech, UnconfiguredVoice
 from azul.adapters.documentos_windows import DocumentosWindows, raices_por_defecto
 from azul.adapters.habilidades_archivos import cargar_habilidades
@@ -34,8 +37,10 @@ from azul.adapters.open_meteo import OpenMeteoWeather
 from azul.adapters.sqlite_store import SqliteStore
 from azul.adapters.tablero_red_nacional import TableroRedNacional
 from azul.adapters.verificador_vosk import cargar_verificador
+from azul.adapters.whatsapp_meta import WhatsAppMeta, crear_receptor
 from azul.backup import backup_if_due
 from azul.config import Settings, get_settings
+from azul.core.bandeja import RevisorDeCorreo
 from azul.core.conversation import (
     BudgetNotice,
     Conversation,
@@ -46,12 +51,16 @@ from azul.core.conversation import (
 )
 from azul.core.ports import (
     Brain,
+    Correo,
     Documentos,
+    MemoryStore,
     RedNacional,
     SpeechToText,
     TextToSpeech,
+    Usage,
     VerificadorDeVoz,
     WeatherProvider,
+    WhatsApp,
 )
 from azul.core.voice import (
     Heard,
@@ -64,6 +73,7 @@ from azul.core.voice import (
     VoiceSession,
     WakeOnly,
 )
+from azul.core.whatsapp import Recepcionista
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +118,28 @@ def build_documentos(settings: Settings) -> Documentos | None:
     return DocumentosWindows(raices_por_defecto(), settings.documentos_salida)
 
 
+def build_correo(settings: Settings) -> Correo | None:
+    if settings.correo_remoto_url and settings.correo_remoto_clave is not None:
+        return CorreoOutlook(
+            ejecutor_remoto(
+                settings.correo_remoto_url, settings.correo_remoto_clave.get_secret_value()
+            )
+        )
+    if not settings.correo_activo or sys.platform != "win32":
+        return None
+    return CorreoOutlook()
+
+
+def build_whatsapp(settings: Settings) -> WhatsApp | None:
+    if settings.whatsapp_token is None or not settings.whatsapp_numero_id:
+        return None
+    return WhatsAppMeta(
+        settings.whatsapp_token.get_secret_value(),
+        settings.whatsapp_numero_id,
+        settings.whatsapp_api_version,
+    )
+
+
 def build_red_nacional(settings: Settings) -> RedNacional | None:
     if not settings.red_nacional_url:
         return None
@@ -123,24 +155,98 @@ def create_app(
     weather: WeatherProvider | None = None,
     red_nacional: RedNacional | None = None,
     documentos: Documentos | None = None,
+    correo: Correo | None = None,
     verificador: VerificadorDeVoz | None = None,
+    whatsapp: WhatsApp | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     store = SqliteStore(settings.data_dir / "azul.db")
-    conversation = Conversation(
-        brain or build_brain(settings),
-        memory=store,
-        meter=store,
-        monthly_budget_usd=settings.monthly_budget_usd,
-        budget_warning_usd=settings.budget_warning_usd,
-        weather=weather or OpenMeteoWeather(),
-        red_nacional=red_nacional or build_red_nacional(settings),
-        habilidades=cargar_habilidades(settings.habilidades_dir),
-        documentos=documentos or build_documentos(settings),
-    )
+    # Las mismas piezas sirven a la conversación del usuario y a las de WhatsApp.
+    piezas: dict[str, Any] = {
+        "weather": weather or OpenMeteoWeather(),
+        "red_nacional": red_nacional or build_red_nacional(settings),
+        "habilidades": cargar_habilidades(settings.habilidades_dir),
+        "documentos": documentos or build_documentos(settings),
+        "correo": correo or build_correo(settings),
+    }
+    cerebro = brain or build_brain(settings)
+
+    def nueva_conversacion(memoria: MemoryStore, **extra: Any) -> Conversation:
+        return Conversation(
+            cerebro,
+            memory=memoria,
+            meter=store,
+            monthly_budget_usd=settings.monthly_budget_usd,
+            budget_warning_usd=settings.budget_warning_usd,
+            **piezas,
+            **extra,
+        )
+
     if stt is None or tts is None:
         default_stt, default_tts = build_voice(settings)
         stt, tts = stt or default_stt, tts or default_tts
+
+    async def voz_de_azul(texto: str) -> bytes:
+        partes = []
+        async for parte in tts.synthesize(texto):
+            if isinstance(parte, Usage):
+                await store.record(parte)
+            else:
+                partes.append(parte)
+        return b"".join(partes)
+
+    whatsapp = whatsapp or build_whatsapp(settings)
+    recepcionista = (
+        Recepcionista(
+            whatsapp,
+            store,
+            settings.whatsapp_dueno,
+            plantilla_aviso=settings.whatsapp_plantilla_aviso,
+            voz=voz_de_azul,
+        )
+        if whatsapp is not None and settings.whatsapp_dueno
+        else None
+    )
+    revisor = (
+        RevisorDeCorreo(
+            piezas["correo"],
+            cerebro,
+            store,
+            store,
+            store,
+            monthly_budget_usd=settings.monthly_budget_usd,
+            avisar=recepcionista.avisar if recepcionista else None,
+            minutos=settings.correo_revision_minutos,
+        )
+        if piezas["correo"] is not None
+        else None
+    )
+    herramientas_extra = [
+        *(recepcionista.herramientas_del_dueno() if recepcionista else []),
+        *(revisor.herramientas() if revisor else []),
+    ]
+    contextos = [
+        c
+        for c in (recepcionista and recepcionista.contexto_para_dueno, revisor and revisor.contexto)
+        if c
+    ]
+
+    async def contexto_extra() -> str:
+        partes = [await contexto() for contexto in contextos]
+        return "\n\n".join(p for p in partes if p)
+
+    conversation = nueva_conversacion(
+        store,
+        herramientas_extra=herramientas_extra,
+        contexto_extra=contexto_extra if contextos else None,
+    )
+    if recepcionista is not None:
+        recepcionista.conectar(
+            conversation,
+            lambda memoria, envolver, instrucciones: nueva_conversacion(
+                memoria, envolver_herramienta=envolver, instrucciones=instrucciones
+            ),
+        )
     voice = VoiceSession(conversation, stt, tts, meter=store)
     if verificador is None:
         verificador = cargar_verificador(
@@ -149,7 +255,31 @@ def create_app(
             settings.data_dir,
             voz_de_azul=lambda: _frases_de_azul(tts),
         )
-    app = FastAPI(title="Azul", version=__version__)
+
+    @asynccontextmanager
+    async def ciclo_de_vida(_: FastAPI) -> AsyncIterator[None]:
+        # Revisión periódica de correos (ADR 0039), mientras Azul esté encendida.
+        tarea = (
+            asyncio.create_task(revisor.vigilar())
+            if revisor is not None and settings.correo_revisar
+            else None
+        )
+        yield
+        if tarea is not None:
+            tarea.cancel()
+
+    app = FastAPI(title="Azul", version=__version__, lifespan=ciclo_de_vida)
+    app.state.receptor_whatsapp = (
+        crear_receptor(
+            settings.whatsapp_secreto_app.get_secret_value(),
+            settings.whatsapp_token_verificacion.get_secret_value(),
+            recepcionista.recibir,
+        )
+        if recepcionista is not None
+        and settings.whatsapp_secreto_app is not None
+        and settings.whatsapp_token_verificacion is not None
+        else None
+    )
 
     access_key = settings.access_key.get_secret_value() if settings.access_key else None
     app.add_middleware(AccessMiddleware, access_key=access_key)
@@ -558,5 +688,26 @@ def run() -> None:
     print(f"Azul está encendido en http://127.0.0.1:{settings.port}")
     print(f"Registro técnico: {log_path}")
     print("Para apagarlo, cierra esta ventana.", flush=True)
-    # log_config=None: uvicorn usa el registro en archivo configurado arriba.
-    uvicorn.run(create_app(settings), host=settings.host, port=settings.port, log_config=None)
+    app = create_app(settings)
+    receptor = app.state.receptor_whatsapp
+    if receptor is None:
+        # log_config=None: uvicorn usa el registro en archivo configurado arriba.
+        uvicorn.run(app, host=settings.host, port=settings.port, log_config=None)
+        return
+    # WhatsApp (ADR 0038): un segundo servidor, solo con /whatsapp, para Tailscale Funnel.
+    print(f"Receptor de WhatsApp en http://127.0.0.1:{settings.whatsapp_puerto}/whatsapp")
+    servidores = [
+        uvicorn.Server(
+            uvicorn.Config(app, host=settings.host, port=settings.port, log_config=None)
+        ),
+        uvicorn.Server(
+            uvicorn.Config(
+                receptor, host="127.0.0.1", port=settings.whatsapp_puerto, log_config=None
+            )
+        ),
+    ]
+
+    async def ambos() -> None:
+        await asyncio.gather(*(servidor.serve() for servidor in servidores))
+
+    asyncio.run(ambos())
