@@ -28,6 +28,8 @@ from azul.access import (
 )
 from azul.adapters.anthropic_brain import AnthropicBrain, UnconfiguredBrain
 from azul.adapters.deepgram import DeepgramSpeechToText, DeepgramTextToSpeech, UnconfiguredVoice
+from azul.adapters.documentos_windows import DocumentosWindows, raices_por_defecto
+from azul.adapters.habilidades_archivos import cargar_habilidades
 from azul.adapters.open_meteo import OpenMeteoWeather
 from azul.adapters.sqlite_store import SqliteStore
 from azul.adapters.tablero_red_nacional import TableroRedNacional
@@ -43,6 +45,7 @@ from azul.core.conversation import (
 )
 from azul.core.ports import (
     Brain,
+    Documentos,
     RedNacional,
     SpeechToText,
     TextToSpeech,
@@ -97,6 +100,12 @@ def build_voice(settings: Settings) -> tuple[SpeechToText, TextToSpeech]:
     )
 
 
+def build_documentos(settings: Settings) -> Documentos | None:
+    if not settings.documentos_activos:
+        return None
+    return DocumentosWindows(raices_por_defecto(), settings.documentos_salida)
+
+
 def build_red_nacional(settings: Settings) -> RedNacional | None:
     if not settings.red_nacional_url:
         return None
@@ -111,6 +120,7 @@ def create_app(
     tts: TextToSpeech | None = None,
     weather: WeatherProvider | None = None,
     red_nacional: RedNacional | None = None,
+    documentos: Documentos | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     store = SqliteStore(settings.data_dir / "azul.db")
@@ -122,6 +132,8 @@ def create_app(
         budget_warning_usd=settings.budget_warning_usd,
         weather=weather or OpenMeteoWeather(),
         red_nacional=red_nacional or build_red_nacional(settings),
+        habilidades=cargar_habilidades(settings.habilidades_dir),
+        documentos=documentos or build_documentos(settings),
     )
     if stt is None or tts is None:
         default_stt, default_tts = build_voice(settings)
@@ -202,6 +214,10 @@ def create_app(
             "limite": settings.monthly_budget_usd,
             "aviso": settings.budget_warning_usd,
         }
+
+    @app.get("/api/conocimiento")
+    async def conocimiento() -> dict[str, Any]:
+        return await conversation.conocimiento()
 
     @app.get("/api/historial")
     async def historial(limite: int = Query(default=50, ge=1, le=200)) -> list[dict[str, str]]:

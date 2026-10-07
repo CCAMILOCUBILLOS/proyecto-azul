@@ -1,5 +1,5 @@
 import "./style.css";
-import { Orbe, type EstadoOrbe, type LecturaOrbe } from "./orbe";
+import { Orbe, type Conocimiento, type EstadoOrbe, type LecturaOrbe } from "./orbe";
 import { Voz, type EventoVoz } from "./voz";
 
 type Rol = "user" | "assistant";
@@ -105,6 +105,8 @@ async function actualizarGasto(): Promise<void> {
     gastoDelMes.textContent = resumen;
     estado.textContent = gasto.gastado_mes >= gasto.aviso ? resumen : "";
     estado.dataset.nivel = gasto.gastado_mes >= gasto.aviso ? "aviso" : "ok";
+    // Tras cada respuesta Azul pudo aprender algo: la red se pone al día.
+    void actualizarConocimiento();
   } catch {
     estado.textContent = "No encuentro el núcleo de Azul. ¿Está encendido?";
     estado.dataset.nivel = "error";
@@ -529,7 +531,28 @@ function leerOrbe(): LecturaOrbe {
   return { estado: estadoActual, nivel: voz.nivelDeSalida, espectro: voz.espectroDeSalida, reservaInferior };
 }
 
-new Orbe(elemento<HTMLCanvasElement>("#orbe"), escena, leerOrbe);
+const orbe = new Orbe(elemento<HTMLCanvasElement>("#orbe"), escena, leerOrbe);
+const saber = elemento<HTMLParagraphElement>("#saber");
+
+function cantidad(numero: number, singular: string, plural: string): string {
+  return `${numero} ${numero === 1 ? singular : plural}`;
+}
+
+// La red neuronal crece con lo que Azul sabe: recuerdos, habilidades y herramientas.
+async function actualizarConocimiento(): Promise<void> {
+  try {
+    const respuesta = await fetch("/api/conocimiento");
+    if (!respuesta.ok) return;
+    const conocimiento = (await respuesta.json()) as Conocimiento;
+    orbe.conocer(conocimiento);
+    saber.textContent =
+      `Azul recuerda ${cantidad(conocimiento.recuerdos, "cosa", "cosas")} de ti · ` +
+      `${cantidad(conocimiento.habilidades.length, "habilidad", "habilidades")} · ` +
+      `${cantidad(conocimiento.herramientas.length, "herramienta", "herramientas")}`;
+  } catch {
+    // Sin núcleo, la red se queda como está.
+  }
+}
 
 const LARGO_SUBTITULO = 200;
 

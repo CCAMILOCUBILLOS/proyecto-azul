@@ -35,3 +35,11 @@ Volver a la versión anterior de `app/index.html`, `app/src/style.css` y `app/sr
 - Los subtítulos se desvanecen 7 s después de que Azul queda en calma; siguen en el historial.
 - Sin contador de gasto en la pantalla principal: el gasto del mes está en el panel del historial y arriba solo aparece el aviso desde 40 USD (el criterio 5 del MVP se mantiene).
 - Sin nombre ni ícono en la franja superior: el orbe es la identidad en pantalla (el ícono sigue siendo el de la app).
+
+## La red crece con lo que Azul sabe (2026-10-06)
+Pedido del usuario: que las conexiones neuronales representen lo que Azul sabe y crezcan solas.
+- El núcleo publica `GET /api/conocimiento`: recuerdos (datos del usuario), habilidades, herramientas y mensajes.
+- Cada recuerdo es una neurona morada; cada habilidad, un racimo de 16 neuronas; cada herramienta, uno de 9; el tejido base se hace más denso con lo conversado (crece con el logaritmo de los mensajes).
+- Cada neurona tiene una posición fija según su clave: al aprender algo, las de antes no se mueven y solo nacen las nuevas, con un destello. Al abrir la app no hay destellos.
+- El panel del historial dice cuántas cosas recuerda Azul y cuántas habilidades y herramientas tiene.
+

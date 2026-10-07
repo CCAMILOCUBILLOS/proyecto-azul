@@ -140,6 +140,34 @@ class RedNacional(Protocol):
     async def ejecutar(self, operacion: str, datos: dict[str, Any]) -> Any: ...
 
 
+@dataclass(frozen=True)
+class Habilidad:
+    """Instrucciones para hacer bien un tipo de tarea (ADR 0032), en formato SKILL.md."""
+
+    nombre: str
+    descripcion: str
+    instrucciones: str
+
+
+class DocumentosError(Exception):
+    """Fallo con un archivo, con un mensaje apto para el usuario."""
+
+
+class Documentos(Protocol):
+    """Los archivos del usuario en el portátil: buscar, leer, convertir y crear (ADR 0032).
+
+    Nunca borra ni sobrescribe: lo que crea es siempre un archivo nuevo.
+    """
+
+    async def buscar(self, texto: str, extensiones: list[str]) -> list[dict[str, Any]]: ...
+
+    async def leer(self, ruta: str) -> str: ...
+
+    async def pdf_a_word(self, ruta: str) -> str: ...
+
+    async def crear_word(self, titulo: str, contenido: str, modelo: str | None) -> str: ...
+
+
 class MemoryStore(Protocol):
     """La memoria: historial de conversación y datos sobre el usuario."""
 

@@ -110,6 +110,11 @@
 - Herramientas listas y probadas: consultar el tablero y lanzar sus procesos por voz, con autonomía total.
 - ⏳ Falta: instalar Tailscale en el PC de Optometría, publicar el tablero (`tailscale serve --bg 8765`) y poner su dirección en `AZUL_RED_NACIONAL_URL`.
 
+## Habilidades y documentos (ADR 0032)
+- Sistema de habilidades (`habilidades/<nombre>/SKILL.md`) y primera habilidad: **redacción**.
+- Azul busca, lee (Word, PDF, texto), convierte PDF a Word con Word y crea documentos Word en OneDrive/Azul/Documentos, sin borrar ni sobrescribir nunca.
+- Siguen: activación sin Siri (toque atrás), "Oye Azul" local en el portátil, Excel/PowerPoint, consulta jurídica, diseño de interfaces, programación y app Android.
+
 ## Próximos pasos
 - Cerrar la v0.3: confirmar "Oye Azul" en el portátil; commit, subida a GitHub y etiqueta `v0.3.0` con aprobación del usuario.
 - La siguiente capacidad la elige el usuario (ADR 0017): productividad con Google y Microsoft, más control del PC, conocimiento (documentos), casa inteligente (en pausa).

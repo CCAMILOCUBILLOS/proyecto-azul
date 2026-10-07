@@ -1,6 +1,8 @@
 """Personalidad e instrucciones de Azul (R2: cercano y casual)."""
 
-from azul.core.ports import Fact
+from collections.abc import Sequence
+
+from azul.core.ports import Fact, Habilidad
 
 PERSONA = """\
 Eres Azul, el asistente personal por voz de una sola persona: tu usuario.
@@ -42,13 +44,23 @@ algo para lo que no tienes herramienta (correo, agenda, controlar el computador�
 naturalidad y ayuda en lo que sí puedas."""
 
 
-def build_system_prompt(facts: list[Fact]) -> str:
-    """Instrucciones fijas + lo que Azul sabe del usuario.
+def build_system_prompt(facts: list[Fact], habilidades: Sequence[Habilidad] = ()) -> str:
+    """Instrucciones fijas + habilidades + lo que Azul sabe del usuario.
 
     Solo cambia cuando se aprende un dato nuevo, así la caché del proveedor
-    se reutiliza entre mensajes.
+    se reutiliza entre mensajes. De cada habilidad va solo el nombre y cuándo
+    usarla; las instrucciones completas se abren con usar_habilidad (ADR 0032).
     """
+    partes = [PERSONA]
+    if habilidades:
+        lista = "\n".join(f"- {h.nombre}: {h.descripcion}" for h in habilidades)
+        partes.append(
+            "Tus habilidades (antes de una tarea de este tipo, abre sus instrucciones con "
+            f"usar_habilidad y síguelas):\n{lista}"
+        )
     if facts:
         known = "\n".join(f"- {fact.text}" for fact in facts)
-        return f"{PERSONA}\n\nLo que sabes del usuario:\n{known}"
-    return f"{PERSONA}\n\nTodavía no sabes nada del usuario."
+        partes.append(f"Lo que sabes del usuario:\n{known}")
+    else:
+        partes.append("Todavía no sabes nada del usuario.")
+    return "\n\n".join(partes)

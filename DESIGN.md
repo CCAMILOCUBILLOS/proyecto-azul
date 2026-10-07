@@ -283,3 +283,5 @@ Entre 280 y 420 nodos (68 % en la superficie de una esfera de Fibonacci con deso
 - **Anillo de barras** (120 barras, a 1.17 radios del centro, simétrico): en reposo son marcas finas; con "Oye Azul" se ven más; escuchando, una ola lenta da la vuelta; pensando o buscando, un barrido gira como un radar; hablando, cada barra sigue el espectro real de la voz de Azul (AnalyserNode), con los graves arriba. Azul hacia violeta según el estado.
 - **Órbitas**: dos elipses finas e inclinadas (azul hielo y morado) a 1.32 radios, con su mitad trasera detrás de la red y un punto de luz que viaja por cada una. Brillan más cuando Azul habla.
 - **Franja superior**: sin nombre ni ícono, por decisión del usuario (2026-10-06); solo el interruptor "Oye Azul" a la derecha. El orbe es la identidad en pantalla.
+- **Red que crece**: la red se arma con lo que Azul sabe (`/api/conocimiento`): una neurona morada por recuerdo, un racimo por habilidad (16) y por herramienta (9), y un tejido base que se densifica con lo conversado. Las neuronas nuevas nacen creciendo desde cero con un anillo de luz de 2,4 s (morado si es un recuerdo, azul hielo si no).
+

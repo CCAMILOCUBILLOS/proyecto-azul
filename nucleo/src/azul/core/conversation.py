@@ -3,20 +3,23 @@
 import json
 import logging
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Literal
 
 from azul.core.effort import choose_effort
+from azul.core.herramientas_documentos import herramienta_habilidades, herramientas_documentos
 from azul.core.notes import FactNotes
 from azul.core.persona import build_system_prompt
 from azul.core.ports import (
     Brain,
     BrainError,
     BrainRequest,
+    Documentos,
     Fact,
+    Habilidad,
     MemoryStore,
     Message,
     RedNacional,
@@ -97,6 +100,8 @@ class Conversation:
         budget_warning_usd: float,
         weather: WeatherProvider | None = None,
         red_nacional: RedNacional | None = None,
+        habilidades: Sequence[Habilidad] = (),
+        documentos: Documentos | None = None,
         now: Callable[[], datetime] = datetime.now,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -140,9 +145,14 @@ class Conversation:
                 )
             )
         if red_nacional is not None:
-            self._tools.extend(
-                herramientas_red_nacional(red_nacional, lambda texto: self._consulted.append(texto))
-            )
+            self._tools.extend(herramientas_red_nacional(red_nacional, self._anotar))
+        # Habilidades (ADR 0032): la lista va en las instrucciones; el detalle, con una herramienta.
+        self._habilidades = list(habilidades)
+        usar_habilidad = herramienta_habilidades(self._habilidades)
+        if usar_habilidad is not None:
+            self._tools.append(usar_habilidad)
+        if documentos is not None:
+            self._tools.extend(herramientas_documentos(documentos, self._anotar))
 
     async def reply(self, user_text: str) -> AsyncIterator[ReplyEvent]:
         spent = await self._meter.month_total_usd()
@@ -152,7 +162,7 @@ class Conversation:
 
         await self._memory.add_message(Message("user", user_text))
         request = BrainRequest(
-            system=build_system_prompt(await self._memory.facts()),
+            system=build_system_prompt(await self._memory.facts(), self._habilidades),
             messages=_for_brain(_starting_with_user(await self._history(including_new=True))),
             effort=choose_effort(user_text),
             context=self._context(),
@@ -219,7 +229,7 @@ class Conversation:
         # La misma ventana que usará reply(), sin el mensaje que aún no llega: el prefijo coincide.
         history = await self._history(including_new=False)
         request = BrainRequest(
-            system=build_system_prompt(await self._memory.facts()),
+            system=build_system_prompt(await self._memory.facts(), self._habilidades),
             messages=_for_brain(_starting_with_user(history)),
             tools=self._tools,
         )
@@ -233,6 +243,24 @@ class Conversation:
         total = stored if including_new else stored + 1
         window = HISTORY_MIN + total % HISTORY_STEP
         return await self._memory.recent_messages(window if including_new else window - 1)
+
+    async def conocimiento(self) -> dict[str, Any]:
+        """Lo que Azul sabe y sabe hacer: la app dibuja su red neuronal con esto."""
+        return {
+            "recuerdos": len(await self._memory.facts()),
+            "habilidades": [h.nombre for h in self._habilidades],
+            # La búsqueda web la pone el cerebro; las demás, este núcleo.
+            "herramientas": [
+                "busqueda_web",
+                *(t.name for t in self._tools if t.name != "usar_habilidad"),
+            ],
+            "mensajes": await self._memory.message_count(),
+        }
+
+    def _anotar(self, consultado: str) -> None:
+        # Lo consultado se guarda una vez por respuesta (ADR 0027).
+        if consultado not in self._consulted:
+            self._consulted.append(consultado)
 
     async def _save_fact(self, fact: str) -> None:
         if len(fact) > MAX_FACT_CHARS:

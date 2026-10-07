@@ -215,3 +215,14 @@ def test_preguntar_explains_errors(settings):
     assert client.post("/api/preguntar", json={"texto": "hola"}).json() == {
         "respuesta": "Sin conexión."
     }
+
+
+def test_conocimiento_counts_memories_skills_and_tools(settings):
+    client = local_client(create_app(settings, brain=FakeBrain()))
+
+    datos = client.get("/api/conocimiento").json()
+
+    assert datos["recuerdos"] == 0
+    assert "redaccion" in datos["habilidades"]
+    assert {"busqueda_web", "clima", "crear_word"} <= set(datos["herramientas"])
+    assert datos["mensajes"] == 0

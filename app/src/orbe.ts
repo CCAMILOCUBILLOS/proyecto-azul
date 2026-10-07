@@ -17,7 +17,22 @@ export interface LecturaOrbe {
   reservaInferior: number;
 }
 
+/** Lo que Azul sabe y sabe hacer (GET /api/conocimiento). */
+export interface Conocimiento {
+  recuerdos: number;
+  habilidades: string[];
+  herramientas: string[];
+  mensajes: number;
+}
+
+type Grupo = "base" | "memoria" | "habilidad" | "herramienta";
+
 interface Nodo {
+  /** Identidad estable: la misma neurona conserva su lugar cuando la red crece. */
+  clave: string;
+  grupo: Grupo;
+  /** Momento en que nació (para el destello); muy negativo si ya estaba. */
+  nacimiento: number;
   x: number;
   y: number;
   z: number;
@@ -89,6 +104,8 @@ const VIOLETA = [139, 92, 246] as const;
 const MORADO = [192, 132, 252] as const;
 const DISTANCIA_CAMARA = 4;
 const VECINOS = 3;
+const MAX_RECUERDOS = 160;
+const SEGUNDOS_NACIENDO = 2.4;
 const PASOS_DE_ONDA = 24;
 const RETARDO_ONDA_S = 0.42; // lo que tarda la luz en ir del núcleo al borde
 const BARRAS = 120; // el anillo del espectro, como el del orbe de Jarvis
@@ -98,6 +115,9 @@ const RADIO_ORBITA = 1.32;
 export class Orbe {
   private readonly contexto: CanvasRenderingContext2D;
   private nodos: Nodo[] = [];
+  private saber: Conocimiento = { recuerdos: 0, habilidades: [], herramientas: [], mensajes: 0 };
+  private baseCantidad = 0;
+  private conocido = false;
   private enlaces: Array<[number, number]> = [];
   private vecinos: number[][] = [];
   private impulsos: Impulso[] = [];
@@ -162,8 +182,12 @@ export class Orbe {
     this.lienzo.width = Math.round(caja.width * this.escalaPixel);
     this.lienzo.height = Math.round(caja.height * this.escalaPixel);
     this.crearEstrellas();
-    const cantidad = Math.min(440, Math.max(300, Math.round(Math.min(caja.width, caja.height) * 0.62)));
-    if (Math.abs(cantidad - this.nodos.length) > 40) this.crearRed(cantidad);
+    // El tejido base según la pantalla; lo aprendido se suma encima (ver plan).
+    const base = Math.min(300, Math.max(200, Math.round(Math.min(caja.width, caja.height) * 0.45)));
+    if (Math.abs(base - this.baseCantidad) > 30) {
+      this.baseCantidad = base;
+      this.construir(false);
+    }
   }
 
   private crearEstrellas(): void {
@@ -184,81 +208,118 @@ export class Orbe {
     });
   }
 
-  private crearRed(cantidad: number): void {
-    const azar = semilla(7);
+  /** Lo que Azul sabe: la red crece con ello (ver construir). */
+  conocer(saber: Conocimiento): void {
+    const antes = this.saber;
+    this.saber = saber;
+    const cambio =
+      saber.recuerdos !== antes.recuerdos ||
+      saber.mensajes !== antes.mensajes ||
+      saber.habilidades.join() !== antes.habilidades.join() ||
+      saber.herramientas.join() !== antes.herramientas.join();
+    // La primera vez no hay destellos: es lo que Azul ya sabía al abrir la app.
+    if (cambio) this.construir(this.conocido);
+    this.conocido = true;
+  }
+
+  /**
+   * Arma la red a partir de lo que Azul sabe. Cada neurona tiene una clave y una
+   * posición que dependen solo de esa clave: al aprender algo nuevo, las de antes
+   * quedan donde estaban y solo nacen las nuevas (con un destello).
+   *   - base: el tejido de la red; se hace más denso con las conversaciones.
+   *   - memoria: una neurona morada por cada cosa que Azul recuerda del usuario.
+   *   - habilidad / herramienta: un racimo por cada una, alrededor de su centro.
+   */
+  private construir(animar: boolean): void {
+    if (this.baseCantidad === 0) return;
+    const plan = this.plan();
+    const previas = new Map(this.nodos.map((nodo) => [nodo.clave, nodo]));
+    const nace = animar && this.nodos.length > 0 ? this.tiempo : -100;
+    this.nodos = plan.map((nodo) => previas.get(nodo.clave) ?? { ...nodo, nacimiento: nace });
+    this.enlazar();
+    this.impulsos = [];
+  }
+
+  private plan(): Nodo[] {
+    const saber = this.saber;
     const nodos: Nodo[] = [];
-    const enSuperficie = Math.round(cantidad * 0.68);
-    const aureo = Math.PI * (3 - Math.sqrt(5));
-    for (let i = 0; i < cantidad; i++) {
-      let x: number;
-      let y: number;
-      let z: number;
-      if (i < enSuperficie) {
-        // Esfera de Fibonacci con desorden: una red orgánica, no un globo geodésico.
-        y = 1 - (2 * (i + 0.5)) / enSuperficie;
-        y = Math.max(-1, Math.min(1, y + (azar() - 0.5) * 0.08));
-        const anillo = Math.sqrt(1 - y * y);
-        const theta = aureo * i + (azar() - 0.5) * 0.5;
-        const radio = 0.78 + Math.pow(azar(), 0.5) * 0.22;
-        x = Math.cos(theta) * anillo * radio;
-        z = Math.sin(theta) * anillo * radio;
-        y *= radio;
-      } else {
-        // Nodos internos: más densos cerca del núcleo.
-        const u = azar();
-        const v = azar();
-        const radio = 0.18 + Math.cbrt(azar()) * 0.66;
-        const theta = 2 * Math.PI * u;
-        const phi = Math.acos(2 * v - 1);
-        x = radio * Math.sin(phi) * Math.cos(theta);
-        y = radio * Math.cos(phi);
-        z = radio * Math.sin(phi) * Math.sin(theta);
-      }
-      nodos.push({
-        x,
-        y,
-        z,
-        radio: Math.min(1, Math.hypot(x, y, z)),
-        fase: azar() * Math.PI * 2,
-        tamano: 0.7 + azar() * 0.9,
-        morada: azar() < 0.3,
-        px: 0,
-        py: 0,
-        profundidad: 0,
-        escala: 1,
-        energia: 0,
-      });
+    // El tejido base: según la pantalla, más lo conversado (crece despacio).
+    const base = this.baseCantidad + Math.min(140, Math.round(Math.log2(1 + saber.mensajes) * 14));
+    for (let i = 0; i < base; i++) {
+      const azar = semilla(1000 + i * 7);
+      const [x, y, z] = azar() < 0.68 ? enSuperficie(azar, 0.78, 0.22) : enInterior(azar);
+      nodos.push(nuevoNodo(`b${i}`, "base", x, y, z, azar));
     }
+    for (let i = 0; i < Math.min(saber.recuerdos, MAX_RECUERDOS); i++) {
+      const azar = semilla(50_000 + i * 13);
+      const [x, y, z] = enSuperficie(azar, 0.84, 0.16);
+      nodos.push(nuevoNodo(`m${i}`, "memoria", x, y, z, azar));
+    }
+    const racimos: Array<[string, Grupo, number, number]> = [
+      ...saber.habilidades.map((n): [string, Grupo, number, number] => [n, "habilidad", 16, 0.72]),
+      ...saber.herramientas.map((n): [string, Grupo, number, number] => [n, "herramienta", 9, 0.6]),
+    ];
+    for (const [nombre, grupo, cantidad, distancia] of racimos) {
+      const centro = semilla(numeroDe(nombre));
+      const [cx, cy, cz] = enSuperficie(centro, 1, 0);
+      for (let j = 0; j < cantidad; j++) {
+        const azar = semilla(numeroDe(`${nombre}:${j}`));
+        const desvio = j === 0 ? 0 : 0.22;
+        let [x, y, z] = [cx * distancia, cy * distancia, cz * distancia].map(
+          (v) => v + (azar() - 0.5) * 2 * desvio,
+        );
+        const largo = Math.hypot(x, y, z);
+        if (largo > 0.97) [x, y, z] = [x, y, z].map((v) => (v / largo) * 0.97);
+        nodos.push(nuevoNodo(`${grupo}:${nombre}:${j}`, grupo, x, y, z, azar));
+      }
+    }
+    return nodos;
+  }
+
+  private enlazar(): void {
+    const nodos = this.nodos;
     const vecinos: number[][] = nodos.map(() => []);
     const enlaces: Array<[number, number]> = [];
     const existe = new Set<number>();
+    const unir = (i: number, j: number) => {
+      const clave = Math.min(i, j) * 100_000 + Math.max(i, j);
+      if (i === j || existe.has(clave)) return;
+      existe.add(clave);
+      enlaces.push([i, j]);
+      vecinos[i].push(j);
+      vecinos[j].push(i);
+    };
     for (let i = 0; i < nodos.length; i++) {
       const cercanos = nodos
         .map((otro, j) => ({ j, d: j === i ? Infinity : distancia2(nodos[i], otro) }))
         .sort((a, b) => a.d - b.d)
         .slice(0, VECINOS);
-      for (const { j } of cercanos) {
-        const clave = Math.min(i, j) * 10_000 + Math.max(i, j);
-        if (existe.has(clave)) continue;
-        existe.add(clave);
-        enlaces.push([i, j]);
-        vecinos[i].push(j);
-        vecinos[j].push(i);
+      for (const { j } of cercanos) unir(i, j);
+    }
+    // Cada racimo se une a su centro: se lee como un "lóbulo" de la red.
+    const centros = new Map<string, number>();
+    nodos.forEach((nodo, i) => {
+      if (nodo.grupo === "habilidad" || nodo.grupo === "herramienta") {
+        const racimo = nodo.clave.slice(0, nodo.clave.lastIndexOf(":"));
+        const centro = centros.get(racimo);
+        if (centro === undefined) centros.set(racimo, i);
+        else unir(i, centro);
+      }
+    });
+    // Axones largos: unen la superficie con el interior y le dan forma de cerebro en red.
+    const azar = semilla(7);
+    const superficie = nodos.map((n, i) => (n.radio > 0.75 ? i : -1)).filter((i) => i >= 0);
+    const interior = nodos.map((n, i) => (n.radio <= 0.75 ? i : -1)).filter((i) => i >= 0);
+    if (interior.length && superficie.length) {
+      for (let k = 0; k < nodos.length * 0.12; k++) {
+        unir(
+          superficie[Math.floor(azar() * superficie.length)],
+          interior[Math.floor(azar() * interior.length)],
+        );
       }
     }
-    // Axones largos: unen la superficie con el interior y le dan forma de cerebro en red.
-    for (let i = 0; i < cantidad * 0.12; i++) {
-      const a = Math.floor(azar() * enSuperficie);
-      const b = enSuperficie + Math.floor(azar() * (cantidad - enSuperficie));
-      if (b >= cantidad) continue;
-      enlaces.push([a, b]);
-      vecinos[a].push(b);
-      vecinos[b].push(a);
-    }
-    this.nodos = nodos;
     this.enlaces = enlaces;
     this.vecinos = vecinos;
-    this.impulsos = [];
   }
 
   private dibujar(ahora: number): void {
@@ -597,9 +658,15 @@ export class Orbe {
 
   private pintarNodos(g: CanvasRenderingContext2D): void {
     for (const nodo of this.nodos) {
-      const alfa = Math.min(1, (0.12 + nodo.profundidad * 0.88) * (0.35 + nodo.energia));
+      // Lo aprendido brilla un poco más que el tejido base.
+      const realce = nodo.grupo === "memoria" ? 1.25 : nodo.grupo === "habilidad" ? 1.1 : 1;
+      const alfa = Math.min(1, (0.12 + nodo.profundidad * 0.88) * (0.35 + nodo.energia) * realce);
       if (alfa < 0.04) continue;
-      const tamano = (2.2 + nodo.energia * 4.5) * nodo.tamano * nodo.escala * (0.55 + nodo.profundidad * 0.6);
+      // Una neurona recién nacida crece desde cero.
+      const edad = this.tiempo - nodo.nacimiento;
+      const crecer = edad < SEGUNDOS_NACIENDO ? 1 - Math.pow(1 - Math.min(1, edad / 1.2), 3) : 1;
+      const tamano =
+        (2.2 + nodo.energia * 4.5) * nodo.tamano * nodo.escala * (0.55 + nodo.profundidad * 0.6) * realce * crecer;
       const sprite =
         nodo.energia > 0.9
           ? this.sprites.blanco
@@ -608,8 +675,23 @@ export class Orbe {
             : this.sprites.azul;
       g.globalAlpha = alfa;
       g.drawImage(sprite, nodo.px - tamano, nodo.py - tamano, tamano * 2, tamano * 2);
+      if (edad < SEGUNDOS_NACIENDO) this.pintarNacimiento(g, nodo, edad);
     }
     g.globalAlpha = 1;
+  }
+
+  /** El destello de una neurona nueva: un anillo que se abre y se apaga. */
+  private pintarNacimiento(g: CanvasRenderingContext2D, nodo: Nodo, edad: number): void {
+    const avance = edad / SEGUNDOS_NACIENDO;
+    const color = nodo.grupo === "memoria" ? MORADO : AZUL_CLARO;
+    g.globalAlpha = (1 - avance) * 0.9;
+    g.strokeStyle = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.arc(nodo.px, nodo.py, 4 + avance * 28, 0, Math.PI * 2);
+    g.stroke();
+    const brillo = 26 * (1 - avance);
+    g.drawImage(this.sprites.blanco, nodo.px - brillo, nodo.py - brillo, brillo * 2, brillo * 2);
   }
 
   private pintarImpulsos(g: CanvasRenderingContext2D): void {
@@ -700,4 +782,57 @@ function semilla(valor: number): () => number {
     estado = (estado * 1_664_525 + 1_013_904_223) % 4_294_967_296;
     return estado / 4_294_967_296;
   };
+}
+
+function nuevoNodo(
+  clave: string,
+  grupo: Grupo,
+  x: number,
+  y: number,
+  z: number,
+  azar: () => number,
+): Nodo {
+  return {
+    clave,
+    grupo,
+    nacimiento: -100,
+    x,
+    y,
+    z,
+    radio: Math.min(1, Math.hypot(x, y, z)),
+    fase: azar() * Math.PI * 2,
+    tamano: grupo === "memoria" ? 1.2 + azar() * 0.6 : 0.7 + azar() * 0.9,
+    morada: grupo === "memoria" || (grupo === "base" && azar() < 0.3),
+    px: 0,
+    py: 0,
+    profundidad: 0,
+    escala: 1,
+    energia: 0,
+  };
+}
+
+/** Un punto al azar en una cáscara de radio [desde, desde + grosor]. */
+function enSuperficie(azar: () => number, desde: number, grosor: number): [number, number, number] {
+  const theta = azar() * Math.PI * 2;
+  const phi = Math.acos(2 * azar() - 1);
+  const radio = desde + Math.sqrt(azar()) * grosor;
+  return [
+    radio * Math.sin(phi) * Math.cos(theta),
+    radio * Math.cos(phi),
+    radio * Math.sin(phi) * Math.sin(theta),
+  ];
+}
+
+/** Un punto del interior, más denso cerca del núcleo. */
+function enInterior(azar: () => number): [number, number, number] {
+  return enSuperficie(azar, 0.18, 0.66 * azar());
+}
+
+/** Convierte un nombre en una semilla estable. */
+function numeroDe(texto: string): number {
+  let numero = 2166136261;
+  for (let i = 0; i < texto.length; i++) {
+    numero = Math.imul(numero ^ texto.charCodeAt(i), 16777619) >>> 0;
+  }
+  return numero;
 }

@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # Tablero de Red Nacional en el PC de Optometría, por Tailscale (ADR 0031).
     # Vacío: Azul no ofrece esas herramientas.
     red_nacional_url: str = ""
+    # Habilidades y archivos del usuario (ADR 0032).
+    habilidades_dir: Path = REPO_ROOT / "habilidades"
+    documentos_activos: bool = True
+    documentos_salida: Path = Field(default_factory=lambda: _onedrive_dir("Documentos"))
 
     # Oído y voz (ADR 0006). Voz elegida por el usuario el 2026-10-05: Gloria (colombiana).
     stt_model: str = "nova-3"
@@ -88,6 +92,13 @@ class Settings(BaseSettings):
         if self.budget_warning_usd >= self.monthly_budget_usd:
             raise ValueError("budget_warning_usd debe ser menor que monthly_budget_usd")
         return self
+
+
+def _onedrive_dir(subcarpeta: str) -> Path:
+    """OneDrive/Azul/<subcarpeta>; sin OneDrive, la carpeta Documentos del usuario."""
+    onedrive = os.environ.get("ONEDRIVE")
+    base = Path(onedrive) / "Azul" if onedrive else Path.home() / "Documents" / "Azul"
+    return base / subcarpeta
 
 
 def _onedrive_backup_dir() -> Path | None:
