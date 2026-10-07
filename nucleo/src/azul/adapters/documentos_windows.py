@@ -1,11 +1,12 @@
-"""Los archivos del usuario en el portátil (ADR 0032).
+"""Los archivos del usuario en el portátil (ADR 0032, 0034).
 
 - Buscar: por palabras del nombre, con un tiempo máximo, saltando carpetas del
   sistema. Por decisión del usuario puede buscar en todo el equipo.
-- Leer: Word (python-docx), PDF (pypdf) y texto.
+- Leer: Word (python-docx), PDF (pypdf), Excel (openpyxl), texto y código.
 - PDF a Word: con el Microsoft Word del usuario (PowerShell + COM), que es el
   que mejor conserva el formato.
-- Crear Word: en OneDrive/Azul/Documentos; con un modelo, conserva su membrete.
+- Crear Word, Excel y archivos de texto o código (HTML, Python…) en
+  OneDrive/Azul/Documentos; un Word con modelo conserva su membrete.
 
 Nunca borra ni sobrescribe. No lee archivos que parezcan secretos (claves, .env).
 """
@@ -21,6 +22,9 @@ from datetime import datetime
 from pathlib import Path
 
 from docx import Document
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from pypdf import PdfReader
 
 from azul.core.ports import DocumentosError
@@ -33,7 +37,53 @@ MAX_CARACTERES = 30_000
 MAX_PAGINAS_PDF = 40
 SEGUNDOS_CONVIRTIENDO = 180
 
-EXTENSIONES_LEGIBLES = {".docx", ".pdf", ".txt", ".md", ".csv"}
+# Texto plano: notas, datos y código fuente.
+EXTENSIONES_TEXTO = {
+    ".txt",
+    ".md",
+    ".csv",
+    ".json",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".ini",
+    ".log",
+    ".html",
+    ".htm",
+    ".css",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".py",
+    ".sql",
+    ".bat",
+    ".ps1",
+    ".sh",
+    ".java",
+    ".cs",
+    ".php",
+    ".go",
+    ".rb",
+    ".vue",
+}
+EXTENSIONES_LEGIBLES = {".docx", ".pdf", ".xlsx", ".xlsm", *EXTENSIONES_TEXTO}
+# Lo que Azul puede escribir como archivo de texto (páginas, código, datos).
+EXTENSIONES_ESCRIBIBLES = {
+    "html",
+    "css",
+    "js",
+    "ts",
+    "py",
+    "md",
+    "txt",
+    "json",
+    "csv",
+    "sql",
+    "xml",
+    "yaml",
+}
+MAX_FILAS_EXCEL = 200
 # Carpetas que no tiene sentido recorrer (sistema, programas, cachés).
 _SALTAR = {
     "windows",
@@ -68,6 +118,12 @@ class DocumentosWindows:
 
     async def pdf_a_word(self, ruta: str) -> str:
         return await asyncio.to_thread(self._pdf_a_word, Path(ruta))
+
+    async def crear_excel(self, titulo: str, hojas: list[dict[str, object]]) -> str:
+        return await asyncio.to_thread(self._crear_excel, titulo, hojas)
+
+    async def guardar_archivo(self, nombre: str, extension: str, contenido: str) -> str:
+        return await asyncio.to_thread(self._guardar_archivo, nombre, extension, contenido)
 
     async def crear_word(self, titulo: str, contenido: str, modelo: str | None) -> str:
         return await asyncio.to_thread(
@@ -117,6 +173,8 @@ class DocumentosWindows:
                 texto = _texto_de_word(ruta)
             elif sufijo == ".pdf":
                 texto = _texto_de_pdf(ruta)
+            elif sufijo in (".xlsx", ".xlsm"):
+                texto = _texto_de_excel(ruta)
             else:
                 texto = ruta.read_text(encoding="utf-8", errors="replace")
         except DocumentosError:
@@ -182,6 +240,34 @@ class DocumentosWindows:
         documento.save(str(destino))
         return str(destino)
 
+    # --- Crear Excel ---
+
+    def _crear_excel(self, titulo: str, hojas: list[dict[str, object]]) -> str:
+        if not hojas:
+            raise DocumentosError("El Excel necesita al menos una hoja con filas.")
+        libro = Workbook()
+        libro.remove(libro.active)
+        usados: set[str] = set()
+        for numero, hoja in enumerate(hojas, start=1):
+            nombre = _nombre_de_hoja(str(hoja.get("nombre") or f"Hoja{numero}"), usados)
+            filas = hoja.get("filas") or []
+            if not isinstance(filas, list):
+                raise DocumentosError("Las filas de una hoja deben ser una lista.")
+            _llenar_hoja(libro.create_sheet(nombre), filas)
+        destino = _libre(self._carpeta_salida() / f"{_nombre_seguro(titulo)}.xlsx")
+        libro.save(str(destino))
+        return str(destino)
+
+    # --- Guardar texto o código ---
+
+    def _guardar_archivo(self, nombre: str, extension: str, contenido: str) -> str:
+        extension = extension.lower().lstrip(".")
+        if extension not in EXTENSIONES_ESCRIBIBLES:
+            raise DocumentosError(f"No guardo archivos .{extension}.")
+        destino = _libre(self._carpeta_salida() / f"{_nombre_seguro(nombre)}.{extension}")
+        destino.write_text(contenido, encoding="utf-8")
+        return str(destino)
+
     def _carpeta_salida(self) -> Path:
         self._salida.mkdir(parents=True, exist_ok=True)
         return self._salida
@@ -234,6 +320,61 @@ def _texto_de_word(ruta: Path) -> str:
         for fila in tabla.rows:
             partes.append(" | ".join(celda.text.strip() for celda in fila.cells))
     return "\n".join(partes)
+
+
+def _texto_de_excel(ruta: Path) -> str:
+    """Cada hoja con sus primeras filas, celdas separadas por " | " (valores, no fórmulas)."""
+    libro = load_workbook(str(ruta), read_only=True, data_only=True)
+    partes = []
+    try:
+        for hoja in libro.worksheets:
+            partes.append(
+                f"## Hoja «{hoja.title}» ({hoja.max_row} filas x {hoja.max_column} columnas)"
+            )
+            for numero, fila in enumerate(hoja.iter_rows(values_only=True), start=1):
+                if numero > MAX_FILAS_EXCEL:
+                    partes.append(f"…(solo las primeras {MAX_FILAS_EXCEL} filas)")
+                    break
+                if any(celda is not None for celda in fila):
+                    partes.append(" | ".join("" if c is None else str(c) for c in fila))
+    finally:
+        libro.close()
+    return "\n".join(partes)
+
+
+def _llenar_hoja(hoja, filas: list[object]) -> None:  # type: ignore[no-untyped-def]
+    """Primera fila como encabezado (negrita, fondo, fija al desplazarse); anchos ajustados."""
+    anchos: dict[int, int] = {}
+    for numero, fila in enumerate(filas, start=1):
+        celdas = fila if isinstance(fila, list) else [fila]
+        for columna, valor in enumerate(celdas, start=1):
+            celda = hoja.cell(row=numero, column=columna, value=_valor(valor))
+            if numero == 1:
+                celda.font = Font(bold=True, color="FFFFFF")
+                celda.fill = PatternFill("solid", fgColor="1F3A66")
+                celda.alignment = Alignment(vertical="center", wrap_text=True)
+            anchos[columna] = max(anchos.get(columna, 0), len(str(valor or "")))
+    for columna, ancho in anchos.items():
+        hoja.column_dimensions[get_column_letter(columna)].width = min(60, max(10, ancho + 2))
+    if len(filas) > 1:
+        hoja.freeze_panes = "A2"
+
+
+def _valor(valor: object) -> object:
+    # Las fórmulas ("=SUMA…") y los números se guardan tal cual; lo demás, como texto.
+    if valor is None or isinstance(valor, (int, float, bool)):
+        return valor
+    return str(valor)
+
+
+def _nombre_de_hoja(nombre: str, usados: set[str]) -> str:
+    limpio = re.sub(r"[\[\]:*?/\\]", "", nombre).strip()[:31] or "Hoja"
+    candidato, numero = limpio, 2
+    while candidato.lower() in usados:
+        candidato = f"{limpio[:28]} {numero}"
+        numero += 1
+    usados.add(candidato.lower())
+    return candidato
 
 
 def _texto_de_pdf(ruta: Path) -> str:

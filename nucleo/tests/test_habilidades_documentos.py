@@ -33,10 +33,17 @@ def test_skills_are_read_from_skill_md_files(tmp_path):
     assert habilidad == Habilidad("juridica", "Consultas de derecho colombiano.", "# Jurídica")
 
 
-def test_the_writing_skill_ships_with_azul():
-    nombres = [h.nombre for h in cargar_habilidades(REPO_ROOT / "habilidades")]
+def test_azul_ships_with_its_skills():
+    nombres = {h.nombre for h in cargar_habilidades(REPO_ROOT / "habilidades")}
 
-    assert "redaccion" in nombres
+    assert nombres == {
+        "redaccion",
+        "juridica",
+        "lectura",
+        "excel",
+        "diseno-interfaces",
+        "programacion",
+    }
 
 
 def test_system_prompt_lists_skills_but_not_their_instructions():
@@ -164,10 +171,18 @@ class FakeDocumentos:
     async def crear_word(self, titulo, contenido, modelo):
         return f"C:\\OneDrive\\Azul\\Documentos\\{titulo}.docx"
 
+    async def crear_excel(self, titulo, hojas):
+        return f"C:\\OneDrive\\Azul\\Documentos\\{titulo}.xlsx"
+
+    async def guardar_archivo(self, nombre, extension, contenido):
+        return f"C:\\OneDrive\\Azul\\Documentos\\{nombre}.{extension}"
+
 
 async def test_document_tools_report_results_and_errors():
     anotado = []
-    buscar, leer, convertir, crear = herramientas_documentos(FakeDocumentos(), anotado.append)
+    buscar, leer, convertir, crear, crear_excel, guardar = herramientas_documentos(
+        FakeDocumentos(), anotado.append
+    )
 
     assert json.loads(await buscar.handler({"texto": "carta", "tipos": ["docx", "exe"]}))
     assert await buscar.handler({"texto": "nada"}) == "No encontré archivos con ese nombre."
@@ -175,7 +190,14 @@ async def test_document_tools_report_results_and_errors():
         await leer.handler({"ruta": "C:\\x.docx"})
     assert (await convertir.handler({"ruta": "C:\\a.pdf"})).endswith("C:\\a.docx")
     assert "Carta.docx" in await crear.handler({"titulo": "Carta", "contenido": "Hola."})
-    assert anotado == ["archivos del PC"] * 4
+    hojas = [{"nombre": "Datos", "filas": [["A"], [1]]}]
+    assert "Cuadro.xlsx" in await crear_excel.handler({"titulo": "Cuadro", "hojas": hojas})
+    assert "tablero.html" in await guardar.handler(
+        {"nombre": "tablero", "extension": "html", "contenido": "<h1>Hola</h1>"}
+    )
+    with pytest.raises(ValueError):
+        await crear_excel.handler({"titulo": "Vacío", "hojas": []})
+    assert anotado == ["archivos del PC"] * 6
 
 
 def _pdf_con_texto(texto: str) -> bytes:
@@ -202,3 +224,48 @@ def _pdf_con_texto(texto: str) -> bytes:
         f"trailer << /Size {len(objetos) + 1} /Root 1 0 R >>\nstartxref\n{inicio}\n%%EOF".encode()
     )
     return bytes(salida)
+
+
+async def test_creates_excel_with_header_numbers_and_formulas(tmp_path):
+    from openpyxl import load_workbook
+
+    documentos, _ = make_documentos(tmp_path)
+    hojas = [
+        {
+            "nombre": "Ventas",
+            "filas": [["Ciudad", "Valor"], ["Cali", 1500000], ["Total", "=SUM(B2:B2)"]],
+        },
+        {"nombre": "Ventas", "filas": [["Otra"]]},
+    ]
+
+    ruta = await documentos.crear_excel("Ventas octubre", hojas)
+
+    libro = load_workbook(ruta)
+    assert libro.sheetnames == ["Ventas", "Ventas 2"]
+    hoja = libro["Ventas"]
+    assert hoja["B2"].value == 1500000
+    assert hoja["B3"].value == "=SUM(B2:B2)"
+    assert hoja["A1"].font.bold
+    assert hoja.freeze_panes == "A2"
+
+
+async def test_reads_excel_sheets_as_rows(tmp_path):
+    documentos, _ = make_documentos(tmp_path)
+    filas = [["IPS", "Ciudad"], ["Sana", "Cali"]]
+    ruta = await documentos.crear_excel("Datos", [{"nombre": "IPS", "filas": filas}])
+
+    texto = await documentos.leer(ruta)
+
+    assert "Hoja «IPS»" in texto
+    assert "Sana | Cali" in texto
+
+
+async def test_saves_pages_and_code_but_not_other_types(tmp_path):
+    documentos, _ = make_documentos(tmp_path)
+
+    ruta = await documentos.guardar_archivo("Tablero", "html", "<!doctype html><h1>Hola</h1>")
+
+    assert ruta.endswith("Tablero.html")
+    assert "Hola" in await documentos.leer(ruta)
+    with pytest.raises(DocumentosError):
+        await documentos.guardar_archivo("virus", "exe", "x")

@@ -167,6 +167,10 @@ class Documentos(Protocol):
 
     async def crear_word(self, titulo: str, contenido: str, modelo: str | None) -> str: ...
 
+    async def crear_excel(self, titulo: str, hojas: list[dict[str, Any]]) -> str: ...
+
+    async def guardar_archivo(self, nombre: str, extension: str, contenido: str) -> str: ...
+
 
 class MemoryStore(Protocol):
     """La memoria: historial de conversación y datos sobre el usuario."""

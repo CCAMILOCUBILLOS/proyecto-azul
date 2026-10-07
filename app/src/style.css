@@ -503,6 +503,41 @@ button.microfono[data-conversacion="true"]::after {
   }
 }
 
+/* --- Toque atrás: un toque en cualquier parte enciende el micrófono --- */
+
+.tocar-para-hablar {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  align-items: end;
+  justify-items: center;
+  padding: 0 24px calc(140px + env(safe-area-inset-bottom));
+  border: 0;
+  background: transparent;
+  color: var(--azul-claro);
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-shadow: 0 0 14px #000;
+  cursor: pointer;
+}
+
+.tocar-para-hablar[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tocar-para-hablar span {
+    animation: latido-suave 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes latido-suave {
+  50% {
+    opacity: 0.45;
+  }
+}
+
 /* --- Historial --- */
 
 .historial {

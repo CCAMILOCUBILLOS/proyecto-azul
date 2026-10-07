@@ -32,6 +32,15 @@ _REASONING_HINTS = (
     "redacta",
     "escribe",
     "calcula",
+    # Habilidades que piden cuidado (ADR 0034).
+    "jurídic",
+    "legal",
+    "norma",
+    "tutela",
+    "demanda",
+    "contrato",
+    "código",
+    "programa",
 )
 
 

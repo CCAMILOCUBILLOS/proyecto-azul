@@ -12,7 +12,25 @@ from typing import Any
 
 from azul.core.ports import Documentos, DocumentosError, Habilidad, ToolSpec
 
-EXTENSIONES = ("docx", "pdf", "txt", "md", "xlsx", "csv", "doc", "pptx")
+EXTENSIONES = (
+    "docx",
+    "pdf",
+    "txt",
+    "md",
+    "xlsx",
+    "csv",
+    "doc",
+    "pptx",
+    "html",
+    "css",
+    "js",
+    "ts",
+    "py",
+    "json",
+    "sql",
+)
+ESCRIBIBLES = ("html", "css", "js", "ts", "py", "md", "txt", "json", "csv", "sql", "xml", "yaml")
+_CELDA = {"anyOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}, {"type": "null"}]}
 
 
 def herramienta_habilidades(habilidades: list[Habilidad]) -> ToolSpec | None:
@@ -66,6 +84,25 @@ def herramientas_documentos(
         anotar("archivos del PC")
         return f"Convertido. El Word quedó en: {nueva}"
 
+    async def crear_excel(entrada: dict[str, Any]) -> str:
+        titulo = str(entrada.get("titulo", "")).strip()
+        hojas = entrada.get("hojas")
+        if not titulo or not isinstance(hojas, list) or not hojas:
+            raise ValueError("Faltan el título o las hojas.")
+        ruta = await _llamar(documentos.crear_excel(titulo, hojas))
+        anotar("archivos del PC")
+        return f"Guardado en: {ruta}"
+
+    async def guardar(entrada: dict[str, Any]) -> str:
+        nombre = str(entrada.get("nombre", "")).strip()
+        extension = str(entrada.get("extension", "")).strip()
+        contenido = str(entrada.get("contenido", ""))
+        if not nombre or not extension or not contenido.strip():
+            raise ValueError("Faltan el nombre, la extensión o el contenido.")
+        ruta = await _llamar(documentos.guardar_archivo(nombre, extension, contenido))
+        anotar("archivos del PC")
+        return f"Guardado en: {ruta}"
+
     async def crear(entrada: dict[str, Any]) -> str:
         titulo = str(entrada.get("titulo", "")).strip()
         contenido = str(entrada.get("contenido", "")).strip()
@@ -104,7 +141,10 @@ def herramientas_documentos(
         ),
         ToolSpec(
             name="leer_documento",
-            description="Lee el texto de un Word, PDF, CSV o archivo de texto del PC del usuario.",
+            description=(
+                "Lee un archivo del PC del usuario: Word, PDF, Excel (cada hoja con sus filas), "
+                "CSV, texto o código fuente."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {"ruta": ruta_schema},
@@ -146,6 +186,62 @@ def herramientas_documentos(
                 "additionalProperties": False,
             },
             handler=crear,
+        ),
+        ToolSpec(
+            name="crear_excel",
+            description=(
+                "Crea un Excel nuevo en OneDrive/Azul/Documentos. Cada hoja es una lista de "
+                "filas; la primera fila es el encabezado (queda en negrita y fija). Usa números "
+                "como números (no como texto) y fórmulas de Excel en inglés empezando por '=' "
+                "(=SUM(B2:B10), =AVERAGE(...)). Nunca sobrescribe."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "titulo": {"type": "string", "description": "Nombre del archivo, sin .xlsx."},
+                    "hojas": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "nombre": {"type": "string"},
+                                "filas": {
+                                    "type": "array",
+                                    "items": {"type": "array", "items": _CELDA},
+                                },
+                            },
+                            "required": ["nombre", "filas"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["titulo", "hojas"],
+                "additionalProperties": False,
+            },
+            handler=crear_excel,
+        ),
+        ToolSpec(
+            name="guardar_archivo",
+            description=(
+                "Guarda un archivo de texto o código en OneDrive/Azul/Documentos: páginas e "
+                "interfaces (html, css, js), programas (py, ts, sql…), notas (md, txt) o datos "
+                "(json, csv). Una página HTML debe ser completa y abrir sola en el navegador. "
+                "Nunca sobrescribe."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "nombre": {
+                        "type": "string",
+                        "description": "Nombre del archivo, sin extensión.",
+                    },
+                    "extension": {"type": "string", "enum": list(ESCRIBIBLES)},
+                    "contenido": {"type": "string"},
+                },
+                "required": ["nombre", "extension", "contenido"],
+                "additionalProperties": False,
+            },
+            handler=guardar,
         ),
     ]
 

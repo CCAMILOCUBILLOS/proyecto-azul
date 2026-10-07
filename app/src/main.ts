@@ -686,6 +686,31 @@ async function iniciar(): Promise<void> {
   await cargarHistorial();
   seguirSubtitulos();
   await actualizarGasto();
+  if (pideConversar) {
+    pideConversar = false;
+    prepararConversacionRapida();
+  }
 }
+
+// --- Toque atrás del iPhone (ADR 0033) ---
+// El atajo abre Azul con ?conversar. iOS solo deja encender el audio de una página
+// tras un toque del usuario, así que basta tocar en cualquier parte de la pantalla.
+
+let pideConversar = new URLSearchParams(location.search).has("conversar");
+if (pideConversar) history.replaceState(null, "", location.pathname);
+
+const tocarParaHablar = elemento<HTMLButtonElement>("#tocar-para-hablar");
+
+function prepararConversacionRapida(): void {
+  if (estadoMicrofono() !== "inactivo") return;
+  tocarParaHablar.hidden = false;
+  tocarParaHablar.focus();
+}
+
+tocarParaHablar.addEventListener("click", () => {
+  tocarParaHablar.hidden = true;
+  iniciarConversacion();
+  void empezarAHablar();
+});
 
 void iniciar();

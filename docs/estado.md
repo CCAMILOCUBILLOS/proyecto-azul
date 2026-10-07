@@ -115,6 +115,13 @@
 - Azul busca, lee (Word, PDF, texto), convierte PDF a Word con Word y crea documentos Word en OneDrive/Azul/Documentos, sin borrar ni sobrescribir nunca.
 - Siguen: activación sin Siri (toque atrás), "Oye Azul" local en el portátil, Excel/PowerPoint, consulta jurídica, diseño de interfaces, programación y app Android.
 
+## Toque atrás en el iPhone (ADR 0033)
+- Dos toques en la parte de atrás del iPhone abren Azul (`?conversar`); un toque en la pantalla y ya escucha. Sin Siri.
+
+## Habilidades (ADR 0032 y 0034)
+- Seis habilidades: redacción, jurídica, lectura, Excel, diseño de interfaces y programación.
+- Archivos: buscar, leer (Word, PDF, Excel, texto, código), PDF → Word, crear Word y Excel, y guardar páginas o código; todo en OneDrive/Azul/Documentos, sin borrar ni sobrescribir.
+
 ## Próximos pasos
 - Cerrar la v0.3: confirmar "Oye Azul" en el portátil; commit, subida a GitHub y etiqueta `v0.3.0` con aprobación del usuario.
 - La siguiente capacidad la elige el usuario (ADR 0017): productividad con Google y Microsoft, más control del PC, conocimiento (documentos), casa inteligente (en pausa).
