@@ -245,16 +245,26 @@ class Conversation:
         return await self._memory.recent_messages(window if including_new else window - 1)
 
     async def conocimiento(self) -> dict[str, Any]:
-        """Lo que Azul sabe y sabe hacer: la app dibuja su red neuronal con esto."""
+        """Lo que Azul sabe y sabe hacer: la app dibuja su red neuronal con esto.
+
+        Las etiquetas son lo que se ve al pasar el cursor por cada neurona.
+        """
+        facts = await self._memory.facts()
+        # La búsqueda web la pone el cerebro; las demás, este núcleo.
+        herramientas = [
+            "busqueda_web",
+            *(t.name for t in self._tools if t.name != "usar_habilidad"),
+        ]
         return {
-            "recuerdos": len(await self._memory.facts()),
+            "recuerdos": len(facts),
             "habilidades": [h.nombre for h in self._habilidades],
-            # La búsqueda web la pone el cerebro; las demás, este núcleo.
-            "herramientas": [
-                "busqueda_web",
-                *(t.name for t in self._tools if t.name != "usar_habilidad"),
-            ],
+            "herramientas": herramientas,
             "mensajes": await self._memory.message_count(),
+            "etiquetas": {
+                "recuerdos": [fact.text for fact in facts],
+                "habilidades": {h.nombre: _resumen(h.descripcion) for h in self._habilidades},
+                "herramientas": {n: _NOMBRES_DE_HERRAMIENTAS.get(n, n) for n in herramientas},
+            },
         }
 
     def _anotar(self, consultado: str) -> None:
@@ -288,6 +298,26 @@ class Conversation:
             f"Fecha y hora actual del usuario: {_WEEKDAYS[now.weekday()]} {now.day} de "
             f"{_MONTHS[now.month - 1]} de {now.year}, {now:%H:%M}."
         )
+
+
+_NOMBRES_DE_HERRAMIENTAS = {
+    "busqueda_web": "Búsqueda en internet",
+    "clima": "Clima",
+    "buscar_archivos": "Buscar archivos en el PC",
+    "leer_documento": "Leer documentos",
+    "pdf_a_word": "Convertir PDF a Word",
+    "crear_word": "Crear documentos Word",
+    "crear_excel": "Crear Excel",
+    "guardar_archivo": "Guardar páginas y código",
+    "red_nacional_consultar": "Red Nacional: consultas",
+    "red_nacional_ejecutar": "Red Nacional: procesos",
+}
+
+
+def _resumen(descripcion: str) -> str:
+    """La primera idea de la descripción de una habilidad, corta para una etiqueta."""
+    primera = descripcion.split(". ")[0].split(" - ")[0].strip().rstrip(".")
+    return primera if len(primera) <= 90 else primera[:87].rstrip() + "…"
 
 
 def _for_brain(messages: list[Message]) -> list[Message]:

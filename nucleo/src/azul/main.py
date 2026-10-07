@@ -33,6 +33,7 @@ from azul.adapters.habilidades_archivos import cargar_habilidades
 from azul.adapters.open_meteo import OpenMeteoWeather
 from azul.adapters.sqlite_store import SqliteStore
 from azul.adapters.tablero_red_nacional import TableroRedNacional
+from azul.adapters.verificador_vosk import cargar_verificador
 from azul.backup import backup_if_due
 from azul.config import Settings, get_settings
 from azul.core.conversation import (
@@ -49,6 +50,7 @@ from azul.core.ports import (
     RedNacional,
     SpeechToText,
     TextToSpeech,
+    VerificadorDeVoz,
     WeatherProvider,
 )
 from azul.core.voice import (
@@ -121,6 +123,7 @@ def create_app(
     weather: WeatherProvider | None = None,
     red_nacional: RedNacional | None = None,
     documentos: Documentos | None = None,
+    verificador: VerificadorDeVoz | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     store = SqliteStore(settings.data_dir / "azul.db")
@@ -139,6 +142,13 @@ def create_app(
         default_stt, default_tts = build_voice(settings)
         stt, tts = stt or default_stt, tts or default_tts
     voice = VoiceSession(conversation, stt, tts, meter=store)
+    if verificador is None:
+        verificador = cargar_verificador(
+            settings.escritorio_modelo_voz,
+            settings.modelo_hablantes,
+            settings.data_dir,
+            voz_de_azul=lambda: _frases_de_azul(tts),
+        )
     app = FastAPI(title="Azul", version=__version__)
 
     access_key = settings.access_key.get_secret_value() if settings.access_key else None
@@ -215,6 +225,41 @@ def create_app(
             "aviso": settings.budget_warning_usd,
         }
 
+    # --- Huella de voz (ADR 0036): el audio llega como PCM de 16 bits a 16 kHz ---
+
+    @app.get("/api/huella")
+    async def huella() -> dict[str, Any]:
+        return {
+            "disponible": verificador is not None,
+            "inscrita": bool(verificador and verificador.inscrito),
+            "muestras": verificador.muestras if verificador else 0,
+        }
+
+    @app.post("/api/huella/muestra")
+    async def huella_muestra(request: Request) -> dict[str, int]:
+        if verificador is None:
+            raise HTTPException(503, "La verificación de voz no está disponible en este equipo.")
+        try:
+            return {"muestras": await verificador.agregar_muestra(await request.body())}
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+
+    @app.post("/api/huella/listo", status_code=204)
+    async def huella_lista() -> Response:
+        if verificador is None:
+            raise HTTPException(503, "La verificación de voz no está disponible en este equipo.")
+        try:
+            await verificador.terminar_inscripcion()
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        return Response(status_code=204)
+
+    @app.delete("/api/huella", status_code=204)
+    async def huella_borrar() -> Response:
+        if verificador is not None:
+            await verificador.borrar()
+        return Response(status_code=204)
+
     @app.get("/api/conocimiento")
     async def conocimiento() -> dict[str, Any]:
         return await conversation.conocimiento()
@@ -232,7 +277,7 @@ def create_app(
 
     @app.websocket("/api/voz")
     async def voz(socket: WebSocket) -> None:
-        await _voice_connection(socket, voice)
+        await _voice_connection(socket, voice, verificador)
 
     # La app web compilada se sirve desde el mismo núcleo: un solo programa.
     # Se monta al final para que no tape las rutas /api.
@@ -257,7 +302,9 @@ class _AppFiles(StaticFiles):
         return response
 
 
-async def _voice_connection(socket: WebSocket, voice: VoiceSession) -> None:
+async def _voice_connection(
+    socket: WebSocket, voice: VoiceSession, verificador: VerificadorDeVoz | None = None
+) -> None:
     """Protocolo de voz con la app.
 
     La app envía {"tipo": "hablar_inicio"} y luego audio PCM en binario. Azul
@@ -265,10 +312,19 @@ async def _voice_connection(socket: WebSocket, voice: VoiceSession) -> None:
     hablar; la app también puede cortar antes con {"tipo": "hablar_fin"}.
     {"tipo": "parar"} interrumpe la respuesta. Azul responde con eventos JSON
     y el audio de cada frase como MP3 en binario.
+
+    Interrumpir con la voz (ADR 0036): mientras Azul responde, la app puede
+    enviar {"tipo": "interrupcion_inicio"} y el audio de alguien hablando. Si la
+    voz es la del usuario, Azul se calla ({"tipo": "interrumpido"}) y ese audio
+    abre un turno nuevo; si no, sigue ({"tipo": "no_eres_tu"}).
     """
     await socket.accept()
     current: asyncio.Task[None] | None = None
     audio: asyncio.Queue[bytes | None] | None = None
+    posible: list[bytes] | None = None
+    llega_audio = asyncio.Event()
+    fin_posible = asyncio.Event()
+    verificando: asyncio.Task[None] | None = None
 
     async def run(queue: asyncio.Queue[bytes | None], *, wake: bool) -> None:
         async def chunks() -> AsyncIterator[bytes]:
@@ -293,7 +349,7 @@ async def _voice_connection(socket: WebSocket, voice: VoiceSession) -> None:
                     {"tipo": "error", "mensaje": "Algo falló con la voz. Quedó en el registro."}
                 )
 
-    async def interrupt() -> None:
+    async def interrupt(aviso: str | None = "parado") -> None:
         nonlocal current, audio
         if audio is not None:
             audio.put_nowait(None)
@@ -302,8 +358,55 @@ async def _voice_connection(socket: WebSocket, voice: VoiceSession) -> None:
             current.cancel()
             with suppress(asyncio.CancelledError):
                 await current
-            await socket.send_json({"tipo": "parado"})
+            if aviso:
+                await socket.send_json({"tipo": aviso})
         current = None
+
+    async def oir_hasta(bytes_necesarios: int, limite: float) -> None:
+        # Se espera a tener voz suficiente para la huella, o a que la persona calle.
+        while (
+            posible is not None
+            and sum(map(len, posible)) < bytes_necesarios
+            and not fin_posible.is_set()
+            and asyncio.get_running_loop().time() < limite
+        ):
+            llega_audio.clear()
+            with suppress(TimeoutError):
+                await asyncio.wait_for(llega_audio.wait(), 0.2)
+
+    async def verificar() -> None:
+        nonlocal posible, audio, current
+        limite = asyncio.get_running_loop().time() + SEGUNDOS_MAXIMOS_VERIFICANDO
+        await oir_hasta(BYTES_PARA_VERIFICAR, limite)
+        if posible is None or verificador is None:
+            return
+        veredicto = await verificador.veredicto(b"".join(posible))
+        if veredicto == "dudoso" and not fin_posible.is_set():
+            # Se parece al usuario, pero no lo bastante: con más voz la huella es más fiable.
+            await oir_hasta(BYTES_PARA_DESEMPATAR, limite)
+            if posible is None:
+                return
+            veredicto = await verificador.veredicto(b"".join(posible))
+        if veredicto != "si":
+            posible = None
+            await socket.send_json({"tipo": "no_eres_tu"})
+            return
+        await interrupt(None)
+        await socket.send_json({"tipo": "interrumpido"})
+        audio = asyncio.Queue()
+        for chunk in posible:
+            audio.put_nowait(chunk)
+        posible = None
+        current = asyncio.create_task(run(audio, wake=False))
+
+    async def cancel_verification() -> None:
+        nonlocal posible, verificando
+        posible = None
+        if verificando is not None and not verificando.done():
+            verificando.cancel()
+            with suppress(asyncio.CancelledError):
+                await verificando
+        verificando = None
 
     try:
         while True:
@@ -311,11 +414,25 @@ async def _voice_connection(socket: WebSocket, voice: VoiceSession) -> None:
             if message["type"] == "websocket.disconnect":
                 break
             if message.get("bytes") is not None:
-                if audio is not None:
+                if posible is not None:
+                    posible.append(message["bytes"])
+                    llega_audio.set()
+                elif audio is not None:
                     audio.put_nowait(message["bytes"])
                 continue
             command = json.loads(message.get("text") or "{}").get("tipo")
-            if command in ("hablar_inicio", "activacion_inicio"):
+            if command == "interrupcion_inicio":
+                if verificador is None or not verificador.inscrito:
+                    await socket.send_json({"tipo": "interrupcion_no_disponible"})
+                    continue
+                await cancel_verification()
+                posible = []
+                fin_posible.clear()
+                verificando = asyncio.create_task(verificar())
+            elif command == "interrupcion_fin":
+                fin_posible.set()
+            elif command in ("hablar_inicio", "activacion_inicio"):
+                await cancel_verification()
                 await interrupt()
                 audio = asyncio.Queue()
                 current = asyncio.create_task(run(audio, wake=command == "activacion_inicio"))
@@ -323,12 +440,49 @@ async def _voice_connection(socket: WebSocket, voice: VoiceSession) -> None:
                 audio.put_nowait(None)
                 audio = None
             elif command == "parar":
+                await cancel_verification()
                 await interrupt()
     finally:
+        await cancel_verification()
         if current is not None:
             current.cancel()
             with suppress(asyncio.CancelledError):
                 await current
+
+
+# Interrumpir con la voz (ADR 0036).
+# Con menos de ~2 s de voz la huella no distingue bien (medido en el ADR 0036).
+BYTES_PARA_VERIFICAR = int(16_000 * 2 * 2.2)  # 2,2 s de voz
+BYTES_PARA_DESEMPATAR = int(16_000 * 2 * 3.5)
+SEGUNDOS_MAXIMOS_VERIFICANDO = 5.0
+_FRASES_DE_AZUL = (
+    "Claro, con gusto te ayudo con eso ahora mismo.",
+    "Hoy en Villavicencio está haciendo bastante calor.",
+    "Listo, ya quedó guardado el documento en tu carpeta.",
+    "Te cuento que hay varias órdenes pendientes por cargar.",
+    "Mañana tienes una reunión a las diez de la mañana.",
+)
+
+
+async def _frases_de_azul(tts: TextToSpeech) -> list[bytes]:
+    """La voz de Azul en PCM de 16 kHz: su huella evita que se interrumpa con su eco."""
+    import miniaudio
+
+    frases = []
+    for frase in _FRASES_DE_AZUL:
+        mp3 = bytearray()
+        async with aclosing(tts.synthesize(frase)) as partes:
+            async for parte in partes:
+                if isinstance(parte, bytes):
+                    mp3.extend(parte)
+        sonido = miniaudio.decode(
+            bytes(mp3),
+            output_format=miniaudio.SampleFormat.SIGNED16,
+            nchannels=1,
+            sample_rate=16_000,
+        )
+        frases.append(sonido.samples.tobytes())
+    return frases
 
 
 def _event_to_dict(event: ReplyEvent) -> dict[str, Any]:

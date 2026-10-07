@@ -149,6 +149,16 @@ class VoiceSession:
                         else:
                             yield Heard(" ".join([*finals, item.text]), is_final=False)
                     if item.ends_speech and finals and not announced_end:
+                        if split_wake_phrase(" ".join(finals)) == "":
+                            # Solo dijo "Oye Azul" (llamado oído en el portátil): se sigue
+                            # escuchando la pregunta, con el plazo de silencio desde cero.
+                            finals.clear()
+                            timer.cancel()
+                            heard_something = asyncio.Event()
+                            timer = asyncio.create_task(
+                                self._listening_timer(stop_listening, heard_something)
+                            )
+                            continue
                         # El usuario dejó de hablar: se deja de escuchar y se responde.
                         stop_listening.set()
                         announced_end = True
@@ -162,6 +172,8 @@ class VoiceSession:
         if not announced_end:
             yield ListeningEnded()
         text = " ".join(finals).strip()
+        # "Oye Azul, ¿qué hora es?" dicho de corrido: al cerebro va solo la pregunta.
+        text = split_wake_phrase(text) or text
         # Sin el contenido: solo cómo terminó el turno, para poder diagnosticar.
         log.info("Turno de voz: %s", "respondiendo" if text else "no se oyó nada")
         if not text:

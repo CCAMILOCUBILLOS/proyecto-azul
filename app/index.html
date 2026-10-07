@@ -95,6 +95,8 @@
       </nav>
     </div>
 
+    <div id="neurona" class="neurona" role="tooltip" hidden></div>
+
     <button type="button" id="tocar-para-hablar" class="tocar-para-hablar" hidden>
       <span>Toca en cualquier parte para hablar con Azul</span>
     </button>
@@ -113,7 +115,28 @@
         </button>
       </header>
       <div id="conversacion" class="conversacion" aria-live="polite" aria-label="Mensajes"></div>
+      <section class="tu-voz" aria-labelledby="tu-voz-titulo">
+        <h3 id="tu-voz-titulo">Tu voz</h3>
+        <p id="estado-tu-voz" class="gasto"></p>
+        <div class="tu-voz-acciones">
+          <button type="button" id="ensenar-voz" class="boton-texto" hidden>Enseñarle mi voz</button>
+          <button type="button" id="olvidar-voz" class="boton-texto boton-texto-suave" hidden>Olvidar mi voz</button>
+        </div>
+      </section>
     </aside>
+
+    <dialog id="dialogo-voz" class="dialogo-voz" aria-labelledby="dialogo-voz-titulo">
+      <form method="dialog">
+        <h2 id="dialogo-voz-titulo">Enséñale tu voz a Azul</h2>
+        <p id="paso-voz" class="paso-voz"></p>
+        <p id="frase-voz" class="frase-voz"></p>
+        <p id="aviso-voz" class="aviso-voz" role="status"></p>
+        <div class="dialogo-voz-acciones">
+          <button type="submit" class="boton-texto boton-texto-suave">Cancelar</button>
+          <button type="button" id="grabar-voz" class="boton-texto">Grabar</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="entrada" class="entrada-clave" aria-labelledby="entrada-titulo">
       <form id="formulario-clave" method="dialog">

@@ -12,6 +12,14 @@ class FakeParlante:
         self.tonos = []
         self.por_sonar = []  # lo que sigue en el parlante: detener() lo vacía, como el real
         self.detenido = 0
+        self.nivel = 0.0
+        self.pausado = False
+
+    def pausar(self):
+        self.pausado = True
+
+    def reanudar(self):
+        self.pausado = False
 
     def reproducir_mp3(self, mp3):
         self.mp3.append(mp3)
@@ -248,3 +256,138 @@ def bloque_de(amplitud):
     from tests.test_escritorio_deteccion import bloque
 
     return bloque(amplitud)
+
+
+class FakeReconocedor:
+    """Reconoce "Oye Azul" al recibir su tercer bloque de audio."""
+
+    def __init__(self, al_bloque=3, al_cerrar=False):
+        self.al_bloque = al_bloque
+        self.al_cerrar = al_cerrar
+        self.bloques = 0
+        self.reinicios = 0
+
+    def cerrar(self):
+        return self.al_cerrar
+
+    def reiniciar(self):
+        self.reinicios += 1
+        self.bloques = 0
+
+    def escuchar(self, bloque):
+        self.bloques += 1
+        return self.bloques == self.al_bloque
+
+
+def crear_local(reconocedor, hora=datetime(2026, 10, 5, 3, 0)):
+    enviados = []
+    parlante = FakeParlante()
+    cliente = ClienteEscritorio(
+        parlante,
+        enviados.append,
+        oye_azul=True,
+        desde=time(0, 0),
+        hasta=time(0, 0),
+        programar=lambda segundos, accion: accion(),
+        reloj=lambda: hora,
+        reconocedor=reconocedor,
+    )
+    return cliente, parlante, enviados
+
+
+def test_local_wake_word_opens_a_turn_with_the_recent_audio_and_a_tone():
+    cliente, parlante, enviados = crear_local(FakeReconocedor(al_bloque=3))
+
+    voz_y_silencio(cliente, bloques_voz=6)
+
+    tipos_enviados = tipos(enviados)
+    # Nada sale del portátil hasta oír "Oye Azul": luego el turno con el audio del llamado.
+    assert tipos_enviados[0] == "hablar_inicio"
+    assert "activacion_inicio" not in tipos_enviados
+    assert tipos_enviados.count("audio") >= 3
+    assert cliente.escuchando and cliente.en_conversacion
+    assert parlante.por_sonar == [TONO_INICIO]
+
+
+def test_speech_without_the_wake_word_never_leaves_the_laptop():
+    cliente, _, enviados = crear_local(FakeReconocedor(al_bloque=999))
+
+    voz_y_silencio(cliente, bloques_voz=6)
+    voz_y_silencio(cliente, bloques_voz=6)
+
+    assert enviados == []
+    assert not cliente.en_conversacion
+
+
+def test_wake_word_found_only_when_the_sentence_ends_still_opens_the_turn():
+    # "Oye Azul, ¿qué hora es?" de corrido: a veces solo la lectura final lo reconoce,
+    # y entonces se envía la frase entera para no perder la pregunta.
+    cliente, _, enviados = crear_local(FakeReconocedor(al_bloque=999, al_cerrar=True))
+
+    voz_y_silencio(cliente, bloques_voz=6)
+
+    assert tipos(enviados)[0] == "hablar_inicio"
+    assert tipos(enviados).count("audio") >= 6
+    assert cliente.escuchando
+
+
+def azul_hablando(nivel=0.2):
+    # Aquí las esperas no se cumplen solas: la pausa dura hasta que llegue el veredicto.
+    enviados = []
+    parlante = FakeParlante()
+    cliente = ClienteEscritorio(
+        parlante,
+        enviados.append,
+        oye_azul=True,
+        desde=time(7, 0),
+        hasta=time(22, 0),
+        programar=lambda segundos, accion: None,
+        reloj=lambda: datetime(2026, 10, 5, 10, 0),
+    )
+    cliente.atajo()
+    cliente.mensaje(evento(tipo="turno"))
+    cliente.mensaje(evento(tipo="escucha_terminada"))
+    cliente.mensaje(b"mp3")
+    parlante.nivel = nivel
+    enviados.clear()
+    return cliente, parlante, enviados
+
+
+def test_azul_echo_alone_does_not_interrupt():
+    cliente, parlante, enviados = azul_hablando(nivel=0.2)
+
+    for _ in range(30):
+        cliente.bloque_de_microfono(bloque_de(2000))  # ~0,06: su propio eco
+
+    assert enviados == []
+    assert not parlante.pausado
+
+
+def test_voice_over_azul_pauses_her_and_sends_clean_audio_to_verify():
+    cliente, parlante, enviados = azul_hablando(nivel=0.2)
+    for _ in range(10):
+        cliente.bloque_de_microfono(bloque_de(2000))
+
+    for _ in range(40):
+        cliente.bloque_de_microfono(bloque_de(16000))  # ~0,49: alguien le habla encima
+
+    assert parlante.pausado
+    assert tipos(enviados)[0] == "interrupcion_inicio"
+    assert tipos(enviados).count("audio") >= 36
+    assert "interrupcion_fin" in tipos(enviados)
+
+
+def test_users_voice_takes_over_and_others_let_azul_continue():
+    cliente, parlante, _ = azul_hablando(nivel=0.2)
+    for _ in range(3):
+        cliente.bloque_de_microfono(bloque_de(16000))
+
+    cliente.mensaje(evento(tipo="no_eres_tu"))
+    assert not parlante.pausado and cliente.respondiendo is not None
+
+    for _ in range(3):
+        cliente.bloque_de_microfono(bloque_de(16000))
+    cliente.mensaje(evento(tipo="interrumpido"))
+
+    assert cliente.escuchando and cliente.en_conversacion
+    assert parlante.detenido >= 1

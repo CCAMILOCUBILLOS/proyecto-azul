@@ -284,4 +284,5 @@ Entre 280 y 420 nodos (68 % en la superficie de una esfera de Fibonacci con deso
 - **Órbitas**: dos elipses finas e inclinadas (azul hielo y morado) a 1.32 radios, con su mitad trasera detrás de la red y un punto de luz que viaja por cada una. Brillan más cuando Azul habla.
 - **Franja superior**: sin nombre ni ícono, por decisión del usuario (2026-10-06); solo el interruptor "Oye Azul" a la derecha. El orbe es la identidad en pantalla.
 - **Red que crece**: la red se arma con lo que Azul sabe (`/api/conocimiento`): una neurona morada por recuerdo, un racimo por habilidad (16) y por herramienta (9), y un tejido base que se densifica con lo conversado. Las neuronas nuevas nacen creciendo desde cero con un anillo de luz de 2,4 s (morado si es un recuerdo, azul hielo si no).
+- **Qué sabe cada neurona**: al pasar el cursor (o tocar en el celular), una etiqueta pequeña junto al cursor (fondo casi negro, borde, radio 12 px, 0,85 rem) dice el tipo en azul hielo (morado si es un recuerdo) y el conocimiento debajo; la neurona se marca con un anillo de 9 px.
 

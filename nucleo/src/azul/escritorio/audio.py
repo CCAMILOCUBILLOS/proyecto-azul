@@ -57,11 +57,25 @@ class Parlante:
         self._buffer = bytearray()
         self._candado = threading.Lock()
         self._sonando = False
+        self._pausado = False
+        self._nivel = 0.0
         self._dispositivo: miniaudio.PlaybackDevice | None = None
 
     @property
     def sonando(self) -> bool:
         return self._sonando
+
+    @property
+    def nivel(self) -> float:
+        """Volumen (RMS, 0 a 1) de lo que está sonando ahora (ADR 0036)."""
+        return self._nivel
+
+    def pausar(self) -> None:
+        """Silencio sin perder lo que falta por decir (para escuchar limpio un momento)."""
+        self._pausado = True
+
+    def reanudar(self) -> None:
+        self._pausado = False
 
     def iniciar(self) -> None:
         self._dispositivo = miniaudio.PlaybackDevice(
@@ -95,6 +109,7 @@ class Parlante:
         with self._candado:
             self._buffer.clear()
             self._sonando = False
+            self._pausado = False
 
     def _agregar(self, pcm: bytes) -> None:
         with self._candado:
@@ -108,14 +123,27 @@ class Parlante:
             pedido = cuadros * 2
             terminado = False
             with self._candado:
-                trozo = bytes(self._buffer[:pedido])
-                del self._buffer[:pedido]
+                if self._pausado:
+                    trozo = b""
+                else:
+                    trozo = bytes(self._buffer[:pedido])
+                    del self._buffer[:pedido]
                 if self._sonando and not self._buffer:
                     self._sonando = False
                     terminado = True
+            self._nivel = _rms(trozo)
             if terminado and self._al_terminar:
                 self._al_terminar()
             cuadros = yield trozo + bytes(pedido - len(trozo))
+
+
+def _rms(pcm: bytes) -> float:
+    if len(pcm) < 2:
+        return 0.0
+    muestras = array.array("h", pcm[: len(pcm) - len(pcm) % 2])
+    # Basta una de cada cuatro muestras: es solo para comparar niveles.
+    pocas = muestras[::4]
+    return math.sqrt(sum(m * m for m in pocas) / len(pocas)) / 32768
 
 
 def tono_pcm(frecuencia: float, milisegundos: int, tasa: int = TASA_PARLANTE) -> bytes:

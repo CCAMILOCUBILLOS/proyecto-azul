@@ -15,9 +15,13 @@ export type EventoVoz =
   | { tipo: "error"; mensaje: string }
   | { tipo: "nada_escuchado" }
   | { tipo: "parado" }
+  | { tipo: "interrumpido" }
+  | { tipo: "no_eres_tu" }
+  | { tipo: "interrupcion_no_disponible" }
   | { tipo: "fin" };
 
 const TASA_DESTINO = 16_000;
+const VOLUMEN_VERIFICANDO = 0.2;
 // Se envía audio cada ~100 ms para no saturar la conexión con mensajes diminutos.
 const MUESTRAS_POR_ENVIO = 0.1;
 
@@ -41,8 +45,16 @@ export class Voz {
   private turnoActivacion = false;
   private reintentos = 0;
   private reconexionPendiente = false;
+  // Interrumpir con la voz (ADR 0036): mientras Azul responde, si alguien habla se
+  // envía para que el núcleo verifique si es el usuario.
+  private interrupcion: DetectorDeVoz | null = null;
+  private puedeInterrumpir: () => boolean = () => false;
+  // Grabación de una muestra para la huella de voz.
+  private grabacion: Float32Array[] | null = null;
   // Mide el volumen de la voz de Azul para que el orbe se ilumine con ella.
   private analizador: AnalyserNode | null = null;
+  // Mientras se verifica una posible interrupción, Azul baja la voz (ADR 0036).
+  private volumen: GainNode | null = null;
   private muestrasSalida: Float32Array<ArrayBuffer> | null = null;
   private bandasSalida: Uint8Array<ArrayBuffer> | null = null;
 
@@ -131,6 +143,47 @@ export class Voz {
     });
   }
 
+  /**
+   * Activa interrumpir con la voz. `puedeInterrumpir` dice si Azul está respondiendo.
+   * Debe llamarse con la huella del usuario ya inscrita en el núcleo.
+   */
+  async activarInterrupcion(puedeInterrumpir: () => boolean): Promise<void> {
+    this.puedeInterrumpir = puedeInterrumpir;
+    this.interrupcion ??= new DetectorDeVoz({
+      empezar: (previos) => {
+        this.cambiarVolumen(VOLUMEN_VERIFICANDO);
+        this.enviar({ tipo: "interrupcion_inicio" });
+        for (const bloque of previos) this.enviarAudio(bloque);
+      },
+      audio: (bloque) => this.enviarAudio(bloque),
+      terminar: () => this.enviar({ tipo: "interrupcion_fin" }),
+    });
+  }
+
+  desactivarInterrupcion(): void {
+    if (this.interrupcion?.escuchandoFragmento) this.enviar({ tipo: "interrupcion_fin" });
+    this.interrupcion = null;
+  }
+
+  /** Graba unos segundos del micrófono (PCM 16 kHz) para enseñarle la voz a Azul. */
+  async grabarMuestra(segundos: number): Promise<Int16Array<ArrayBuffer>> {
+    const contexto = this.asegurarContexto();
+    await contexto.resume();
+    await this.prepararMicrofono();
+    this.grabacion = [];
+    await new Promise((listo) => setTimeout(listo, segundos * 1000));
+    const bloques = this.grabacion;
+    this.grabacion = null;
+    const total = bloques.reduce((suma, b) => suma + b.length, 0);
+    const juntas = new Float32Array(total);
+    let posicion = 0;
+    for (const bloque of bloques) {
+      juntas.set(bloque, posicion);
+      posicion += bloque.length;
+    }
+    return aPcm16(juntas, contexto.sampleRate);
+  }
+
   desactivarOyeAzul(): void {
     if (this.detector?.escuchandoFragmento) this.enviar({ tipo: "activacion_fin" });
     this.detector = null;
@@ -173,9 +226,16 @@ export class Voz {
       this.analizador.fftSize = 1024;
       this.muestrasSalida = new Float32Array(this.analizador.fftSize);
       this.bandasSalida = new Uint8Array(this.analizador.frequencyBinCount);
-      this.analizador.connect(contexto.destination);
+      this.volumen = contexto.createGain();
+      this.analizador.connect(this.volumen).connect(contexto.destination);
     }
     return this.analizador;
+  }
+
+  private cambiarVolumen(valor: number): void {
+    if (!this.volumen || !this.contexto) return;
+    // Un cambio suave (0,15 s), sin chasquidos.
+    this.volumen.gain.setTargetAtTime(valor, this.contexto.currentTime, 0.05);
   }
 
   private asegurarContexto(): AudioContext {
@@ -213,6 +273,19 @@ export class Voz {
         }
         const evento = JSON.parse(mensaje.data as string) as EventoVoz;
         if (evento.tipo === "turno") this.aceptarAudio = true;
+        // Era la voz del usuario: Azul se calla y lo que sigue diciendo es su nuevo mensaje.
+        if (evento.tipo === "no_eres_tu" || evento.tipo === "interrupcion_no_disponible") {
+          this.cambiarVolumen(1);
+        }
+        if (evento.tipo === "interrumpido") {
+          this.callar();
+          this.cambiarVolumen(1);
+          this.interrupcion?.reiniciar();
+          this.pendientes = [];
+          this.muestrasPendientes = 0;
+          this.turnoActivacion = false;
+          this.grabando = true;
+        }
         // Ruido sin palabras: el detector aprende su nivel (nunca de una conversación ajena).
         if (evento.tipo === "ignorado" && evento.con_palabras === false) this.detector?.aprenderRuido();
         // Azul detectó que terminaste de hablar: se apaga el micrófono (o se cierra el
@@ -275,6 +348,21 @@ export class Voz {
 
   private recibirMuestras(muestras: Float32Array): void {
     if (!this.contexto) return;
+    if (this.grabacion) {
+      this.grabacion.push(muestras);
+      return;
+    }
+    if (!this.grabando && this.interrupcion) {
+      if (this.puedeInterrumpir()) {
+        this.interrupcion.agregar(muestras, this.contexto.sampleRate, true);
+        return;
+      }
+      if (this.interrupcion.escuchandoFragmento) {
+        // Azul terminó de responder a mitad de la posible interrupción.
+        this.interrupcion.reiniciar();
+        this.enviar({ tipo: "interrupcion_fin" });
+      }
+    }
     if (!this.grabando) {
       const puedeEmpezar = this.puedeActivarse() && !this.sonando;
       this.detector?.agregar(muestras, this.contexto.sampleRate, puedeEmpezar);

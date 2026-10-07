@@ -1,5 +1,11 @@
 import "./style.css";
-import { Orbe, type Conocimiento, type EstadoOrbe, type LecturaOrbe } from "./orbe";
+import {
+  Orbe,
+  type Conocimiento,
+  type EstadoOrbe,
+  type LecturaOrbe,
+  type NeuronaSenalada,
+} from "./orbe";
 import { Voz, type EventoVoz } from "./voz";
 
 type Rol = "user" | "assistant";
@@ -290,6 +296,14 @@ function alEventoDeVoz(evento: EventoVoz): void {
       if (burbujaEscuchada && !burbujaEscuchada.textContent) burbujaEscuchada.remove();
       agregarBurbuja("aviso", evento.tipo === "gasto" ? avisoDeGasto(evento) : evento.mensaje);
       break;
+    case "interrumpido":
+      // El usuario habló encima de Azul y era su voz (ADR 0036): ella se calla, lo que
+      // dijo queda a medias en el historial y lo que él dice es el siguiente mensaje.
+      terminarBurbujaDeVoz(true);
+      break;
+    case "no_eres_tu":
+    case "interrupcion_no_disponible":
+      break;
     case "parado":
       // Si ya estamos escuchando, es solo la confirmación de que nuestro turno nuevo
       // interrumpió al anterior (p. ej. tras "Oye Azul"): la conversación sigue.
@@ -509,6 +523,7 @@ function enCalma(estadoActual: EstadoOrbe): boolean {
 let espectroDePrueba: Uint8Array | null = null;
 
 function leerOrbe(): LecturaOrbe {
+  if (cursor) mostrarNeurona(cursor.x, cursor.y);
   const estadoActual = estadoDePrueba ?? estadoVisual();
   if (estadoActual !== estadoMostrado) {
     estadoMostrado = estadoActual;
@@ -533,6 +548,86 @@ function leerOrbe(): LecturaOrbe {
 
 const orbe = new Orbe(elemento<HTMLCanvasElement>("#orbe"), escena, leerOrbe);
 const saber = elemento<HTMLParagraphElement>("#saber");
+let conocimientoActual: Conocimiento | null = null;
+
+// --- Qué sabe cada neurona: al pasar el cursor (o tocarla en el celular) ---
+
+const neurona = elemento<HTMLDivElement>("#neurona");
+let ocultarNeurona: number | undefined;
+// Donde está el cursor sobre el orbe: como la red gira, se vuelve a mirar en cada cuadro.
+let cursor: { x: number; y: number } | null = null;
+let claveMostrada = "";
+
+function etiquetaDe(senalada: NeuronaSenalada): [string, string] | null {
+  const datos = conocimientoActual;
+  if (!datos) return null;
+  const nombre = senalada.clave.slice(senalada.grupo.length + 1, senalada.clave.lastIndexOf(":"));
+  switch (senalada.grupo) {
+    case "memoria": {
+      const texto = datos.etiquetas?.recuerdos[Number(senalada.clave.slice(1))];
+      return texto ? ["Recuerdo", texto] : null;
+    }
+    case "habilidad":
+      return ["Habilidad", datos.etiquetas?.habilidades[nombre] ?? nombre];
+    case "herramienta":
+      return ["Herramienta", datos.etiquetas?.herramientas[nombre] ?? nombre];
+    default:
+      return ["Lo conversado", cantidad(datos.mensajes, "mensaje", "mensajes")];
+  }
+}
+
+function mostrarNeurona(x: number, y: number, duracionMs?: number): void {
+  window.clearTimeout(ocultarNeurona);
+  const senalada = orbe.neuronaEn(x, y);
+  const etiqueta = senalada ? etiquetaDe(senalada) : null;
+  if (!etiqueta) {
+    neurona.hidden = true;
+    return;
+  }
+  const [tipo, texto] = etiqueta;
+  if (senalada && senalada.clave !== claveMostrada) {
+    claveMostrada = senalada.clave;
+    neurona.dataset.tipo = senalada.grupo;
+    neurona.replaceChildren(
+      Object.assign(document.createElement("span"), { className: "neurona-tipo", textContent: tipo }),
+      Object.assign(document.createElement("span"), { textContent: texto }),
+    );
+  }
+  neurona.hidden = false;
+  // Junto al cursor, sin salirse de la pantalla.
+  const ancho = neurona.offsetWidth;
+  const alto = neurona.offsetHeight;
+  neurona.style.left = `${Math.min(window.innerWidth - ancho - 12, x + 16)}px`;
+  neurona.style.top = `${Math.max(12, y - alto - 12)}px`;
+  if (duracionMs) ocultarNeurona = window.setTimeout(() => (neurona.hidden = true), duracionMs);
+}
+
+function sobreLaInterfaz(objetivo: EventTarget | null): boolean {
+  return objetivo instanceof Element && objetivo.closest("button, .top, .pie, .entrada, .historial, dialog, .subtitulos") !== null;
+}
+
+document.addEventListener("pointermove", (evento) => {
+  if (evento.pointerType !== "mouse") return;
+  if (sobreLaInterfaz(evento.target)) {
+    cursor = null;
+    neurona.hidden = true;
+    orbe.neuronaEn(-1000, -1000);
+    return;
+  }
+  cursor = { x: evento.clientX, y: evento.clientY };
+  mostrarNeurona(cursor.x, cursor.y);
+});
+
+document.addEventListener("pointerdown", (evento) => {
+  if (evento.pointerType === "mouse" || sobreLaInterfaz(evento.target)) return;
+  mostrarNeurona(evento.clientX, evento.clientY, 2500);
+});
+
+document.addEventListener("pointerleave", () => {
+  cursor = null;
+  neurona.hidden = true;
+  orbe.neuronaEn(-1000, -1000);
+});
 
 function cantidad(numero: number, singular: string, plural: string): string {
   return `${numero} ${numero === 1 ? singular : plural}`;
@@ -544,6 +639,7 @@ async function actualizarConocimiento(): Promise<void> {
     const respuesta = await fetch("/api/conocimiento");
     if (!respuesta.ok) return;
     const conocimiento = (await respuesta.json()) as Conocimiento;
+    conocimientoActual = conocimiento;
     orbe.conocer(conocimiento);
     saber.textContent =
       `Azul recuerda ${cantidad(conocimiento.recuerdos, "cosa", "cosas")} de ti · ` +
@@ -686,11 +782,120 @@ async function iniciar(): Promise<void> {
   await cargarHistorial();
   seguirSubtitulos();
   await actualizarGasto();
+  await actualizarHuella();
   if (pideConversar) {
     pideConversar = false;
     prepararConversacionRapida();
   }
 }
+
+// --- Tu voz: interrumpir a Azul hablándole, solo con tu voz (ADR 0036) ---
+
+interface EstadoHuella {
+  disponible: boolean;
+  inscrita: boolean;
+}
+
+const estadoTuVoz = elemento<HTMLParagraphElement>("#estado-tu-voz");
+const botonEnsenarVoz = elemento<HTMLButtonElement>("#ensenar-voz");
+const botonOlvidarVoz = elemento<HTMLButtonElement>("#olvidar-voz");
+const dialogoVoz = elemento<HTMLDialogElement>("#dialogo-voz");
+const pasoVoz = elemento<HTMLParagraphElement>("#paso-voz");
+const fraseVoz = elemento<HTMLParagraphElement>("#frase-voz");
+const avisoVoz = elemento<HTMLParagraphElement>("#aviso-voz");
+const botonGrabarVoz = elemento<HTMLButtonElement>("#grabar-voz");
+
+const FRASES_PARA_TU_VOZ = [
+  "Hola Azul, esta es mi voz y quiero que la reconozcas.",
+  "Hoy quiero revisar las órdenes y los pendientes de la semana.",
+  "Por favor, recuérdame llamar a la IPS de Cali mañana temprano.",
+  "Espera, eso no es lo que te pedí, déjame explicarte otra vez.",
+  "Gracias, con eso es suficiente por ahora.",
+];
+const SEGUNDOS_POR_FRASE = 5;
+let fraseActual = 0;
+
+async function actualizarHuella(): Promise<void> {
+  try {
+    const respuesta = await fetch("/api/huella");
+    if (!respuesta.ok) return;
+    const huella = (await respuesta.json()) as EstadoHuella;
+    botonEnsenarVoz.hidden = !huella.disponible;
+    botonOlvidarVoz.hidden = !huella.inscrita;
+    botonEnsenarVoz.textContent = huella.inscrita ? "Volver a enseñarle mi voz" : "Enseñarle mi voz";
+    estadoTuVoz.textContent = !huella.disponible
+      ? "Interrumpir a Azul con la voz no está disponible en este equipo."
+      : huella.inscrita
+        ? "Azul conoce tu voz: puedes interrumpirla hablándole mientras responde."
+        : "Enséñale tu voz para poder interrumpirla hablándole mientras responde.";
+    if (huella.inscrita) {
+      void voz.activarInterrupcion(() => estadoMicrofono() === "respondiendo");
+    } else {
+      voz.desactivarInterrupcion();
+    }
+  } catch {
+    // Sin núcleo no hay huella.
+  }
+}
+
+function mostrarFraseDeVoz(): void {
+  pasoVoz.textContent = `Frase ${fraseActual + 1} de ${FRASES_PARA_TU_VOZ.length}`;
+  fraseVoz.textContent = FRASES_PARA_TU_VOZ[fraseActual];
+  botonGrabarVoz.textContent = "Grabar";
+  botonGrabarVoz.disabled = false;
+}
+
+botonEnsenarVoz.addEventListener("click", async () => {
+  // Se empieza de cero: las muestras viejas no se mezclan con las nuevas.
+  await fetch("/api/huella", { method: "DELETE" }).catch(() => undefined);
+  fraseActual = 0;
+  avisoVoz.textContent = "Lee la frase en voz alta, con tu tono normal, cuando toques Grabar.";
+  mostrarFraseDeVoz();
+  dialogoVoz.showModal();
+});
+
+botonOlvidarVoz.addEventListener("click", async () => {
+  await fetch("/api/huella", { method: "DELETE" }).catch(() => undefined);
+  await actualizarHuella();
+});
+
+botonGrabarVoz.addEventListener("click", async () => {
+  botonGrabarVoz.disabled = true;
+  botonGrabarVoz.textContent = "Escuchando…";
+  avisoVoz.textContent = `Lee la frase ahora (${SEGUNDOS_POR_FRASE} segundos).`;
+  try {
+    const muestra = await voz.grabarMuestra(SEGUNDOS_POR_FRASE);
+    const respuesta = await fetch("/api/huella/muestra", {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: muestra,
+    });
+    if (!respuesta.ok) {
+      const detalle = (await respuesta.json().catch(() => ({}))) as { detail?: string };
+      avisoVoz.textContent = detalle.detail ?? "No pude guardar esa frase. Intenta de nuevo.";
+      mostrarFraseDeVoz();
+      return;
+    }
+    fraseActual++;
+    if (fraseActual < FRASES_PARA_TU_VOZ.length) {
+      avisoVoz.textContent = "Bien. Sigue con la próxima.";
+      mostrarFraseDeVoz();
+      return;
+    }
+    botonGrabarVoz.textContent = "Aprendiendo tu voz…";
+    const listo = await fetch("/api/huella/listo", { method: "POST" });
+    if (!listo.ok) throw new Error(`HTTP ${listo.status}`);
+    dialogoVoz.close();
+    await actualizarHuella();
+    agregarBurbuja("aviso", "Listo: ya conozco tu voz. Puedes interrumpirme hablándome mientras respondo.");
+  } catch (error) {
+    const permisoNegado = error instanceof DOMException && error.name === "NotAllowedError";
+    avisoVoz.textContent = permisoNegado
+      ? "Necesito permiso para usar el micrófono."
+      : "Algo falló al grabar. Intenta de nuevo.";
+    mostrarFraseDeVoz();
+  }
+});
 
 // --- Toque atrás del iPhone (ADR 0033) ---
 // El atajo abre Azul con ?conversar. iOS solo deja encender el audio de una página

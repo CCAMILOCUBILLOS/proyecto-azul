@@ -503,6 +503,39 @@ button.microfono[data-conversacion="true"]::after {
   }
 }
 
+/* --- Qué sabe una neurona: aparece al pasar el cursor --- */
+
+.neurona {
+  position: fixed;
+  z-index: 4;
+  display: grid;
+  gap: 2px;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 8px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  background: rgb(7 7 22 / 92%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 50%);
+  color: var(--texto);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.neurona[hidden] {
+  display: none;
+}
+
+.neurona-tipo {
+  color: var(--azul-claro);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.neurona[data-tipo="memoria"] .neurona-tipo {
+  color: var(--morado);
+}
+
 /* --- Toque atrás: un toque en cualquier parte enciende el micrófono --- */
 
 .tocar-para-hablar {
@@ -545,7 +578,7 @@ button.microfono[data-conversacion="true"]::after {
   inset: 0 0 0 auto;
   z-index: 10;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto 1fr auto;
   width: min(440px, 100%);
   padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
   border-left: 1px solid var(--borde-suave);
@@ -653,6 +686,89 @@ button.microfono[data-conversacion="true"]::after {
   content: " (interrumpido)";
   color: var(--tenue);
   font-size: 0.8em;
+}
+
+/* --- Tu voz (ADR 0036) --- */
+
+.tu-voz {
+  display: grid;
+  gap: 6px;
+  padding: 14px 20px calc(16px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--borde-suave);
+}
+
+.tu-voz h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.tu-voz-acciones,
+.dialogo-voz-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.boton-texto {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 20px;
+  background: var(--azul);
+  color: #fff;
+  font-weight: 600;
+}
+
+.boton-texto:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.boton-texto-suave {
+  border: 1px solid var(--borde);
+  background: transparent;
+  color: var(--suave);
+}
+
+.dialogo-voz {
+  width: min(440px, calc(100vw - 32px));
+  padding: 26px 24px;
+  border: 1px solid var(--borde);
+  border-radius: 20px;
+  background: var(--fondo-alto);
+  color: var(--texto);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 60%);
+}
+
+.dialogo-voz::backdrop {
+  background: rgb(0 0 0 / 80%);
+}
+
+.dialogo-voz h2 {
+  margin: 0 0 6px;
+  font-size: 1.2rem;
+}
+
+.paso-voz {
+  margin: 0;
+  color: var(--tenue);
+  font-size: 0.8rem;
+}
+
+.frase-voz {
+  margin: 14px 0;
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-wrap: balance;
+}
+
+.aviso-voz {
+  min-height: 1.4em;
+  margin: 0 0 16px;
+  color: var(--suave);
+  font-size: 0.88rem;
 }
 
 /* --- Clave de acceso --- */

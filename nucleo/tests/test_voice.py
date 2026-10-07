@@ -320,3 +320,28 @@ async def test_wake_fragment_without_words_is_cut_after_a_few_seconds(store):
     events = [event async for event in session.handle_wake(endless_audio())]
 
     assert events == [ListeningEnded(), NotForAzul(had_words=False)]
+
+
+async def test_wake_phrase_said_in_one_go_reaches_the_brain_without_it(store):
+    # "Oye Azul" oído en el portátil abre un turno con el audio del llamado (ADR 0035).
+    brain = FakeBrain(["Son las diez."])
+    stt = FakeSpeechToText([Transcript("Oye Azul, ¿qué hora es?", True, ends_speech=True)])
+
+    await collect(make_session(store, brain, stt))
+
+    assert brain.requests[0].messages[-1].text == "¿qué hora es?"
+
+
+async def test_only_the_wake_phrase_keeps_listening_for_the_question(store):
+    brain = FakeBrain(["Son las diez."])
+    stt = FakeSpeechToText(
+        [
+            Transcript("Oye Azul.", True, ends_speech=True),
+            Transcript("¿Qué hora es?", True, ends_speech=True),
+        ]
+    )
+
+    events = await collect(make_session(store, brain, stt))
+
+    assert brain.requests[0].messages[-1].text == "¿Qué hora es?"
+    assert events.count(ListeningEnded()) == 1

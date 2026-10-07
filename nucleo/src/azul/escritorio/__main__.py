@@ -13,6 +13,7 @@ from azul.config import get_settings
 from azul.escritorio.audio import Microfono, Parlante
 from azul.escritorio.cliente import ClienteEscritorio
 from azul.escritorio.horario import parse_hora
+from azul.escritorio.palabra_clave import cargar_reconocedor
 
 log = logging.getLogger("azul.escritorio")
 
@@ -40,6 +41,9 @@ async def ejecutar() -> None:
         desde=parse_hora(settings.escritorio_desde),
         hasta=parse_hora(settings.escritorio_hasta),
         programar=lambda segundos, accion: loop.call_later(segundos, accion),
+        reconocedor=cargar_reconocedor(settings.escritorio_modelo_voz)
+        if settings.escritorio_oye_azul
+        else None,
     )
     parlante.iniciar()
     microfono = Microfono(loop, microfono_cola)

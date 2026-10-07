@@ -10,7 +10,12 @@ def parse_hora(texto: str) -> time:
 
 
 def dentro_del_horario(ahora: time, desde: time, hasta: time) -> bool:
-    """Admite horarios que cruzan la medianoche (p. ej. 22:00–02:00)."""
-    if desde <= hasta:
+    """Admite horarios que cruzan la medianoche (p. ej. 22:00–02:00).
+
+    La misma hora de inicio y de fin (p. ej. 00:00–00:00) significa todo el día.
+    """
+    if desde == hasta:
+        return True
+    if desde < hasta:
         return desde <= ahora < hasta
     return ahora >= desde or ahora < hasta

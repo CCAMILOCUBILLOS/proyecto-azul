@@ -70,8 +70,12 @@ class Settings(BaseSettings):
     escritorio_activo: bool = True
     escritorio_atajo: str = "<ctrl>+<alt>+a"
     escritorio_oye_azul: bool = True
-    escritorio_desde: str = "07:00"
-    escritorio_hasta: str = "22:00"
+    # Todo el día por decisión del usuario (ADR 0035): esperar ya no cuesta nada.
+    escritorio_desde: str = "00:00"
+    escritorio_hasta: str = "00:00"
+    escritorio_modelo_voz: Path = REPO_ROOT / "datos" / "modelos" / "vosk-model-small-es-0.42"
+    # Huella de voz para interrumpir a Azul solo con la voz del usuario (ADR 0036).
+    modelo_hablantes: Path = REPO_ROOT / "datos" / "modelos" / "vosk-model-spk-0.4"
 
     # Respaldos de la memoria (ADR 0022): en el portátil y en OneDrive, por decisión
     # del usuario. Sin OneDrive, solo en el portátil.

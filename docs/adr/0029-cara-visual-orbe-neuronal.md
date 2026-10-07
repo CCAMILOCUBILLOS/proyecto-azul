@@ -42,4 +42,5 @@ Pedido del usuario: que las conexiones neuronales representen lo que Azul sabe y
 - Cada recuerdo es una neurona morada; cada habilidad, un racimo de 16 neuronas; cada herramienta, uno de 9; el tejido base se hace más denso con lo conversado (crece con el logaritmo de los mensajes).
 - Cada neurona tiene una posición fija según su clave: al aprender algo, las de antes no se mueven y solo nacen las nuevas, con un destello. Al abrir la app no hay destellos.
 - El panel del historial dice cuántas cosas recuerda Azul y cuántas habilidades y herramientas tiene.
+- Al pasar el cursor por una neurona (o tocarla en el celular) aparece lo que representa: el recuerdo ("Toma café sin azúcar"), la habilidad, la herramienta o lo conversado. La neurona señalada se marca con un anillo fino; como la red gira, se vuelve a mirar en cada cuadro.
 

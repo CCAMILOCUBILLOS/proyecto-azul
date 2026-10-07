@@ -226,3 +226,113 @@ def test_conocimiento_counts_memories_skills_and_tools(settings):
     assert "redaccion" in datos["habilidades"]
     assert {"busqueda_web", "clima", "crear_word"} <= set(datos["herramientas"])
     assert datos["mensajes"] == 0
+    assert datos["etiquetas"]["herramientas"]["clima"] == "Clima"
+    assert datos["etiquetas"]["habilidades"]["redaccion"].startswith("Redactar o corregir")
+    assert datos["etiquetas"]["recuerdos"] == []
+
+
+class FakeVerificador:
+    def __init__(self, es_el_usuario=True, inscrito=True):
+        self.respuesta = es_el_usuario
+        self.inscrito = inscrito
+        self.muestras = 0
+        self.verificado = []
+
+    async def agregar_muestra(self, pcm):
+        if len(pcm) < 10:
+            raise ValueError("No oí suficiente voz.")
+        self.muestras += 1
+        return self.muestras
+
+    async def terminar_inscripcion(self):
+        self.inscrito = True
+
+    async def borrar(self):
+        self.inscrito = False
+
+    async def es_el_usuario(self, pcm):
+        return await self.veredicto(pcm) == "si"
+
+    async def veredicto(self, pcm):
+        self.verificado.append(len(pcm))
+        if isinstance(self.respuesta, list):
+            return self.respuesta.pop(0)
+        return "si" if self.respuesta else "no"
+
+
+def interrupcion(socket, segundos=2.4):
+    socket.send_json({"tipo": "interrupcion_inicio"})
+    for _ in range(int(segundos * 10)):
+        socket.send_bytes(b"\0" * 3200)
+
+
+def test_user_voice_interrupts_and_opens_a_new_turn(settings):
+    verificador = FakeVerificador(es_el_usuario=True)
+    stt = FakeSpeechToText([Transcript("No, espera.", True)])
+    brain = FakeBrain(["Vale."])
+    app = create_app(
+        settings, brain=brain, stt=stt, tts=FakeTextToSpeech(), verificador=verificador
+    )
+
+    with local_client(app).websocket_connect("/api/voz") as socket:
+        interrupcion(socket)
+        assert socket.receive_json() == {"tipo": "interrumpido"}
+        socket.send_json({"tipo": "hablar_fin"})
+        recibido = receive_until_end(socket)
+
+    assert recibido[0] == {"tipo": "turno"}
+    assert brain.requests[0].messages[-1].text == "No, espera."
+    assert verificador.verificado[0] >= 16_000 * 2 * 2.2
+
+
+def test_a_doubtful_voice_is_checked_again_with_more_audio(settings):
+    verificador = FakeVerificador(es_el_usuario=["dudoso", "si"])
+    stt = FakeSpeechToText([Transcript("Espera.", True)])
+    app = create_app(
+        settings, brain=FakeBrain(["Ok."]), stt=stt, tts=FakeTextToSpeech(), verificador=verificador
+    )
+
+    with local_client(app).websocket_connect("/api/voz") as socket:
+        interrupcion(socket, segundos=3.7)
+        assert socket.receive_json() == {"tipo": "interrumpido"}
+
+    assert verificador.verificado[1] >= 16_000 * 2 * 3.5
+
+
+def test_other_voices_do_not_interrupt(settings):
+    app = create_app(
+        settings,
+        brain=FakeBrain(),
+        stt=FakeSpeechToText([]),
+        tts=FakeTextToSpeech(),
+        verificador=FakeVerificador(es_el_usuario=False),
+    )
+
+    with local_client(app).websocket_connect("/api/voz") as socket:
+        interrupcion(socket)
+        assert socket.receive_json() == {"tipo": "no_eres_tu"}
+
+
+def test_interrupting_needs_an_enrolled_voice(settings):
+    app = create_app(settings, brain=FakeBrain(), verificador=FakeVerificador(inscrito=False))
+
+    with local_client(app).websocket_connect("/api/voz") as socket:
+        socket.send_json({"tipo": "interrupcion_inicio"})
+        assert socket.receive_json() == {"tipo": "interrupcion_no_disponible"}
+
+
+def test_voice_enrollment_endpoints(settings):
+    verificador = FakeVerificador(inscrito=False)
+    client = local_client(create_app(settings, brain=FakeBrain(), verificador=verificador))
+
+    assert client.get("/api/huella").json() == {
+        "disponible": True,
+        "inscrita": False,
+        "muestras": 0,
+    }
+    assert client.post("/api/huella/muestra", content=b"\0" * 32_000).json() == {"muestras": 1}
+    assert client.post("/api/huella/muestra", content=b"\0").status_code == 422
+    assert client.post("/api/huella/listo").status_code == 204
+    assert client.get("/api/huella").json()["inscrita"] is True
+    assert client.delete("/api/huella").status_code == 204
+    assert client.get("/api/huella").json()["inscrita"] is False

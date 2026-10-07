@@ -172,6 +172,28 @@ class Documentos(Protocol):
     async def guardar_archivo(self, nombre: str, extension: str, contenido: str) -> str: ...
 
 
+class VerificadorDeVoz(Protocol):
+    """¿Quien habla es el usuario? Para que solo él pueda interrumpir a Azul (ADR 0036)."""
+
+    @property
+    def inscrito(self) -> bool: ...
+
+    @property
+    def muestras(self) -> int: ...
+
+    async def agregar_muestra(self, pcm: bytes) -> int: ...
+
+    async def terminar_inscripcion(self) -> None: ...
+
+    async def borrar(self) -> None: ...
+
+    async def es_el_usuario(self, pcm: bytes) -> bool: ...
+
+    async def veredicto(self, pcm: bytes) -> str:
+        """ "si", "no" o "dudoso" (conviene oír más voz antes de decidir)."""
+        ...
+
+
 class MemoryStore(Protocol):
     """La memoria: historial de conversación y datos sobre el usuario."""
 

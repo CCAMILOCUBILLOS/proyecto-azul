@@ -106,9 +106,9 @@
 - La ventana del historial se mueve de a 20 mensajes para aprovechar la caché.
 - Prueba real: respuesta corta a 0,21 ¢ (antes ~2,4 ¢ en promedio con Opus) y primer texto en 1,4 s.
 
-## Red Nacional (ADR 0031, en curso)
-- Herramientas listas y probadas: consultar el tablero y lanzar sus procesos por voz, con autonomía total.
-- ⏳ Falta: instalar Tailscale en el PC de Optometría, publicar el tablero (`tailscale serve --bg 8765`) y poner su dirección en `AZUL_RED_NACIONAL_URL`.
+## Red Nacional (ADR 0031)
+- Conectado el 2026-10-07: el tablero del PC de Optometría está publicado en la red privada (`https://desktop-uqe8rug.tailc78da3.ts.net`) y configurado en `AZUL_RED_NACIONAL_URL`.
+- Prueba real de solo lectura: Azul respondió las órdenes pendientes y la última creada (2,8 ¢).
 
 ## Habilidades y documentos (ADR 0032)
 - Sistema de habilidades (`habilidades/<nombre>/SKILL.md`) y primera habilidad: **redacción**.
@@ -121,6 +121,14 @@
 ## Habilidades (ADR 0032 y 0034)
 - Seis habilidades: redacción, jurídica, lectura, Excel, diseño de interfaces y programación.
 - Archivos: buscar, leer (Word, PDF, Excel, texto, código), PDF → Word, crear Word y Excel, y guardar páginas o código; todo en OneDrive/Azul/Documentos, sin borrar ni sobrescribir.
+
+## "Oye Azul" local (ADR 0035)
+- El portátil reconoce "Oye Azul" sin internet (Vosk), todo el día y sin costo mientras espera.
+- ⏳ Falta la prueba con la voz real del usuario.
+
+## Interrumpir con la voz (ADR 0036)
+- Mientras Azul responde, el usuario puede hablarle encima: si es su voz (huella), Azul se calla y atiende lo nuevo.
+- ⏳ Falta: que el usuario enseñe su voz en la app y pruebe con su voz real.
 
 ## Próximos pasos
 - Cerrar la v0.3: confirmar "Oye Azul" en el portátil; commit, subida a GitHub y etiqueta `v0.3.0` con aprobación del usuario.

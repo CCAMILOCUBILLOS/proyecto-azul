@@ -1,6 +1,6 @@
 # 0028. Azul en el portátil: cliente de voz de escritorio
 
-- Estado: Aprobada (activación y dependencias elegidas por el usuario el 2026-10-05)
+- Estado: Aprobada (activación y dependencias elegidas por el usuario el 2026-10-05) ("Oye Azul" ahora es local y de 24 horas: ADR 0035)
 - Fecha: 2026-10-05
 - Capa: 1 y 3
 - Tipo: B (reversible)

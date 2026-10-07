@@ -23,9 +23,20 @@ export interface Conocimiento {
   habilidades: string[];
   herramientas: string[];
   mensajes: number;
+  /** Lo que se muestra al pasar el cursor por una neurona. */
+  etiquetas?: {
+    recuerdos: string[];
+    habilidades: Record<string, string>;
+    herramientas: Record<string, string>;
+  };
 }
 
-type Grupo = "base" | "memoria" | "habilidad" | "herramienta";
+export interface NeuronaSenalada {
+  grupo: Grupo;
+  clave: string;
+}
+
+export type Grupo = "base" | "memoria" | "habilidad" | "herramienta";
 
 interface Nodo {
   /** Identidad estable: la misma neurona conserva su lugar cuando la red crece. */
@@ -106,6 +117,7 @@ const DISTANCIA_CAMARA = 4;
 const VECINOS = 3;
 const MAX_RECUERDOS = 160;
 const SEGUNDOS_NACIENDO = 2.4;
+const RADIO_PARA_SENALAR = 14;
 const PASOS_DE_ONDA = 24;
 const RETARDO_ONDA_S = 0.42; // lo que tarda la luz en ir del núcleo al borde
 const BARRAS = 120; // el anillo del espectro, como el del orbe de Jarvis
@@ -118,6 +130,7 @@ export class Orbe {
   private saber: Conocimiento = { recuerdos: 0, habilidades: [], herramientas: [], mensajes: 0 };
   private baseCantidad = 0;
   private conocido = false;
+  private senalada: Nodo | null = null;
   private enlaces: Array<[number, number]> = [];
   private vecinos: number[][] = [];
   private impulsos: Impulso[] = [];
@@ -206,6 +219,22 @@ export class Orbe {
         lejania,
       };
     });
+  }
+
+  /** La neurona más cercana a un punto de la pantalla, de las que se ven de frente. */
+  neuronaEn(x: number, y: number): NeuronaSenalada | null {
+    let cercana: Nodo | null = null;
+    let mejor = RADIO_PARA_SENALAR ** 2;
+    for (const nodo of this.nodos) {
+      if (nodo.profundidad < 0.3) continue;
+      const distancia = (nodo.px - x) ** 2 + (nodo.py - y) ** 2;
+      if (distancia < mejor) {
+        mejor = distancia;
+        cercana = nodo;
+      }
+    }
+    this.senalada = cercana;
+    return cercana ? { grupo: cercana.grupo, clave: cercana.clave } : null;
   }
 
   /** Lo que Azul sabe: la red crece con ello (ver construir). */
@@ -530,6 +559,7 @@ export class Orbe {
     this.pintarNodos(g);
     this.pintarImpulsos(g);
     this.pintarAnillo(g, cx, cy, radio);
+    if (this.senalada) this.pintarSenalada(g, this.senalada);
     this.pintarOrbitas(g, cx, cy, radio, "adelante");
     g.globalCompositeOperation = "source-over";
   }
@@ -677,6 +707,19 @@ export class Orbe {
       g.drawImage(sprite, nodo.px - tamano, nodo.py - tamano, tamano * 2, tamano * 2);
       if (edad < SEGUNDOS_NACIENDO) this.pintarNacimiento(g, nodo, edad);
     }
+    g.globalAlpha = 1;
+  }
+
+  /** La neurona bajo el cursor: un anillo fino y un brillo, sin moverla. */
+  private pintarSenalada(g: CanvasRenderingContext2D, nodo: Nodo): void {
+    const color = nodo.grupo === "memoria" ? MORADO : AZUL_CLARO;
+    g.globalAlpha = 0.9;
+    g.strokeStyle = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+    g.lineWidth = 1.25;
+    g.beginPath();
+    g.arc(nodo.px, nodo.py, 9, 0, Math.PI * 2);
+    g.stroke();
+    g.drawImage(this.sprites.blanco, nodo.px - 10, nodo.py - 10, 20, 20);
     g.globalAlpha = 1;
   }
 
