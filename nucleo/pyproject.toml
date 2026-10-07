@@ -1,6 +1,6 @@
 [project]
 name = "azul"
-version = "0.8.0"
+version = "0.8.1"
 description = "Núcleo de Azul, asistente personal por voz"
 requires-python = ">=3.13,<3.14"
 dependencies = [

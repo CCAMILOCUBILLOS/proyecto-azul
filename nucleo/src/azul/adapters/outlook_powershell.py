@@ -51,9 +51,22 @@ function Buscar-Por-Id($id) {
   try { return $ns.GetItemFromID([string]$id) } catch { throw 'NO_ENCONTRADO' }
 }
 function Poner-Cuerpo($m, $html) {
-  # Abrir el inspector (sin mostrarlo) hace que Outlook ponga la firma del usuario.
-  $null = $m.GetInspector
+  if ($e.firma_html) {
+    # La firma elegida, leída de su archivo; sus imágenes van incrustadas (cid:), como
+    # las manda Outlook: si no, al destinatario le llegan como cuadro roto.
+    $html = $html + [string]$e.firma_html
+    $tag = 'http://schemas.microsoft.com/mapi/proptag/'
+    foreach ($img in $e.firma_imagenes) {
+      $pa = $m.Attachments.Add([string]$img.ruta).PropertyAccessor
+      $pa.SetProperty($tag + '0x3712001F', [string]$img.cid)  # identificador cid:
+      try { $pa.SetProperty($tag + '0x7FFE000B', $true) } catch {}  # oculto como adjunto
+    }
+  } else {
+    # Abrir el inspector (sin mostrarlo) hace que Outlook ponga su firma predeterminada.
+    $null = $m.GetInspector
+  }
   $h = [string]$m.HTMLBody
+  if (-not $h) { $h = '<html><body></body></html>' }
   $b = [regex]::Match($h, '(?is)<body[^>]*>')
   if ($b.Success) { $m.HTMLBody = $h.Insert($b.Index + $b.Length, $html) }
   else { $m.HTMLBody = $html + $h }
@@ -143,8 +156,8 @@ Guardar @{
 try { $m = $ns.GetDefaultFolder(16).Items.Add(0) } catch { $m = $o.CreateItem(0) }
 $m.BodyFormat = 2
 $m.To = [string]$e.para; $m.CC = [string]$e.cc; $m.Subject = [string]$e.asunto
-$null = $m.GetInspector
-$firma = ([string]$m.Body).Trim().Length -gt 0
+if ($e.firma_html) { $firma = $true }
+else { $null = $m.GetInspector; $firma = ([string]$m.Body).Trim().Length -gt 0 }
 Poner-Cuerpo $m ([string]$e.html)
 Adjuntar $m
 $null = $m.Recipients.ResolveAll()
@@ -162,6 +175,72 @@ Guardar @{
 }
 """,
 }
+
+
+def con_firma(entrada: dict[str, Any], carpeta: Path | None = None) -> dict[str, Any]:
+    """Agrega el HTML y las imágenes de la firma pedida ("firma": su nombre en Outlook).
+
+    Se lee en el equipo donde está Outlook (en Optometría, dentro del ayudante). Si no
+    existe, el correo usa la firma predeterminada de Outlook, si la hay.
+    """
+    nombre = str(entrada.get("firma") or "").strip()
+    if not nombre:
+        return entrada
+    html, imagenes = cargar_firma(nombre, carpeta)
+    if html is None:
+        log.warning("No encontré la firma pedida; uso la predeterminada de Outlook")
+        return entrada
+    return {
+        **entrada,
+        "firma_html": html,
+        "firma_imagenes": [{"ruta": ruta, "cid": cid} for ruta, cid in imagenes],
+    }
+
+
+def cargar_firma(nombre: str, carpeta: Path | None = None) -> tuple[str | None, list]:
+    """(HTML de la firma con sus imágenes como cid:, [(ruta, cid)]), o (None, []).
+
+    Igual que cargar_firma de agendar.py en Red Nacional: se lee el archivo de firmas de
+    Outlook (%APPDATA%\\Microsoft\\Signatures\\<nombre>.htm).
+    """
+    import urllib.parse
+
+    carpeta = carpeta or Path(os.environ.get("APPDATA", ""), "Microsoft", "Signatures")
+    ruta = carpeta / (Path(nombre).name + ".htm")
+    if not ruta.is_file():
+        return None, []
+    html = _leer_texto_firma(ruta)
+    cuerpo = re.search(r"<body[^>]*>(.*)</body>", html, re.I | re.S)
+    texto = cuerpo.group(1) if cuerpo else html
+    imagenes: list = []
+    vistos: dict = {}
+
+    def cambiar(m: re.Match) -> str:
+        src = urllib.parse.unquote(m.group(2))
+        if src.lower().startswith(("cid:", "http:", "https:", "data:")):
+            return m.group(0)
+        archivo = (carpeta / src.replace("/", os.sep)).resolve()
+        if not archivo.is_file():
+            return m.group(0)
+        if archivo not in vistos:
+            vistos[archivo] = f"firma{len(vistos) + 1}@azul"
+            imagenes.append((str(archivo), vistos[archivo]))
+        return f"{m.group(1)}cid:{vistos[archivo]}{m.group(3)}"
+
+    texto = re.sub(r"(<img\b[^>]*?\bsrc=[\"'])([^\"']+)([\"'])", cambiar, texto, flags=re.I)
+    return texto, imagenes
+
+
+def _leer_texto_firma(ruta: Path) -> str:
+    crudo = ruta.read_bytes()
+    m = re.search(rb"charset=([A-Za-z0-9_-]+)", crudo[:4000], re.I)
+    for codificacion in ([m.group(1).decode("ascii", "ignore")] if m else []) + ["utf-8", "cp1252"]:
+        try:
+            return crudo.decode(codificacion)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return crudo.decode("cp1252", "replace")
+
 
 # Lo más común (visto en la prueba real): una ventana de Office esperando respuesta,
 # como el asistente de activación; mientras tanto Outlook lee pero no crea correos.
@@ -181,6 +260,7 @@ def _error_de_powershell(stderr: bytes) -> str:
 
 
 def ejecutar(accion: str, entrada: dict[str, Any]) -> dict[str, Any]:
+    entrada = con_firma(entrada)
     guion = _PRELUDIO + ACCIONES[accion]
     codificado = base64.b64encode(guion.encode("utf-16-le")).decode("ascii")
     with tempfile.TemporaryDirectory(prefix="azul-correo-") as carpeta:

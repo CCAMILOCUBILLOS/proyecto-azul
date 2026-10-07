@@ -123,11 +123,12 @@ def build_correo(settings: Settings) -> Correo | None:
         return CorreoOutlook(
             ejecutor_remoto(
                 settings.correo_remoto_url, settings.correo_remoto_clave.get_secret_value()
-            )
+            ),
+            firma=settings.correo_firma,
         )
     if not settings.correo_activo or sys.platform != "win32":
         return None
-    return CorreoOutlook()
+    return CorreoOutlook(firma=settings.correo_firma)
 
 
 def build_whatsapp(settings: Settings) -> WhatsApp | None:

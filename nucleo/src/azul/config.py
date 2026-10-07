@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     # Con esto, Azul usa ese Outlook en vez del de este equipo.
     correo_remoto_url: str = ""
     correo_remoto_clave: SecretStr | None = None
+    # Firma de Outlook para los correos que redacta Azul (su nombre en Outlook).
+    correo_firma: str = ""
     # Revisión de correos: prioridades, itinerario y alertas de lo urgente (ADR 0039).
     correo_revisar: bool = True
     correo_revision_minutos: float = Field(default=10, ge=2)

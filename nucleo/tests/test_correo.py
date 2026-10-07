@@ -166,3 +166,39 @@ def test_there_is_no_tool_to_send_mail():
     tools, _ = herramientas(OutlookFalso({}))
 
     assert set(tools) == {"correo_buscar", "correo_leer", "correo_borrador", "correo_responder"}
+
+
+def test_the_named_outlook_signature_goes_with_its_images_embedded(tmp_path):
+    firmas = tmp_path / "Signatures"
+    (firmas / "Camilo Cubillos_archivos").mkdir(parents=True)
+    (firmas / "Camilo Cubillos_archivos" / "logo.png").write_bytes(b"PNG")
+    (firmas / "Camilo Cubillos.htm").write_text(
+        '<html><head><meta charset="utf-8"></head><body><p>Camilo Cubillos</p>'
+        '<img src="Camilo%20Cubillos_archivos/logo.png"><img src="https://web.co/x.png">'
+        "</body></html>",
+        encoding="utf-8",
+    )
+
+    entrada = outlook_powershell.con_firma({"firma": "Camilo Cubillos"}, firmas)
+
+    assert entrada["firma_html"].startswith("<p>Camilo Cubillos</p>")
+    assert 'src="cid:firma1@azul"' in entrada["firma_html"]
+    assert 'src="https://web.co/x.png"' in entrada["firma_html"]  # las de internet, tal cual
+    [imagen] = entrada["firma_imagenes"]
+    assert imagen["ruta"].endswith("logo.png") and imagen["cid"] == "firma1@azul"
+    assert outlook_powershell.con_firma({"firma": "No existe"}, firmas) == {"firma": "No existe"}
+
+
+async def test_drafts_and_replies_ask_for_the_configured_signature():
+    outlook = OutlookFalso(
+        {
+            "borrador": {"id": "x", "destinatarios": []},
+            "responder": {"id": "r", "destinatarios": []},
+        }
+    )
+    correo = CorreoOutlook(outlook, firma="Camilo Cubillos")
+
+    await correo.crear_borrador([], [], "A", "B", [])
+    await correo.responder_en_borrador("id", "B", False, [])
+
+    assert [e["firma"] for _, e in outlook.llamadas] == ["Camilo Cubillos", "Camilo Cubillos"]

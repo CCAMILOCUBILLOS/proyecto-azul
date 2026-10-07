@@ -56,8 +56,10 @@ Ejecutar = Callable[[str, dict[str, Any]], dict[str, Any]]
 
 
 class CorreoOutlook:
-    def __init__(self, ejecutar: Ejecutar | None = None) -> None:
+    def __init__(self, ejecutar: Ejecutar | None = None, firma: str = "") -> None:
         self._ejecutar = ejecutar or _local
+        # Nombre de la firma de Outlook para los correos de Azul ("" = la predeterminada).
+        self._firma = firma
 
     async def buscar(self, texto: str, carpeta: str, dias: int) -> list[dict[str, Any]]:
         return await asyncio.to_thread(self._buscar, texto, carpeta, dias)
@@ -74,6 +76,7 @@ class CorreoOutlook:
             "asunto": asunto,
             "html": _html(cuerpo),
             "adjuntos": _adjuntos(adjuntos),
+            "firma": self._firma,
         }
         return await asyncio.to_thread(self._ejecutar, "borrador", entrada)
 
@@ -85,6 +88,7 @@ class CorreoOutlook:
             "a_todos": a_todos,
             "html": _html(cuerpo),
             "adjuntos": _adjuntos(adjuntos),
+            "firma": self._firma,
         }
         return await asyncio.to_thread(self._ejecutar, "responder", entrada)
 
