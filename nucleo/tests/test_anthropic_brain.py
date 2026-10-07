@@ -223,3 +223,34 @@ async def test_prewarm_failure_is_not_fatal():
     brain = AnthropicBrain(fake_anthropic_client([], created=error), model="claude-opus-5-5")
 
     assert await brain.prewarm(make_request()) is None
+
+
+async def test_everyday_messages_use_sonnet_and_deep_ones_use_opus():
+    # ADR 0030: lo cotidiano con el modelo económico; "piénsalo a fondo" con Opus.
+    client = fake_anthropic_client([(["ok"], final_message()), (["ok"], final_message())])
+    brain = AnthropicBrain(client, model="claude-sonnet-5-5", deep_model="claude-opus-5-5")
+
+    await collect(brain, make_request(effort=Effort.MEDIUM))
+    await collect(brain, make_request(effort=Effort.HIGH))
+
+    assert [call["model"] for call in client.beta.messages.calls] == [
+        "claude-sonnet-5-5",
+        "claude-opus-5-5",
+    ]
+
+
+async def test_prewarm_warms_the_everyday_model():
+    client = fake_anthropic_client([])
+    brain = AnthropicBrain(client, model="claude-sonnet-5-5", deep_model="claude-opus-5-5")
+
+    await brain.prewarm(make_request(effort=Effort.HIGH))
+
+    assert client.beta.messages.create_calls[0]["model"] == "claude-sonnet-5-5"
+
+
+def test_sonnet_5_5_costs_half_of_opus_5_5():
+    tokens = usage(input_tokens=1000, output_tokens=100, cache_read=10_000)
+
+    assert cost_usd("claude-sonnet-5-5", tokens) == pytest.approx(
+        (1000 * 2 + 100 * 10 + 10_000 * 0.20) / 1_000_000
+    )

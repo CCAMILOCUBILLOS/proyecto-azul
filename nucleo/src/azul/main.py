@@ -30,6 +30,7 @@ from azul.adapters.anthropic_brain import AnthropicBrain, UnconfiguredBrain
 from azul.adapters.deepgram import DeepgramSpeechToText, DeepgramTextToSpeech, UnconfiguredVoice
 from azul.adapters.open_meteo import OpenMeteoWeather
 from azul.adapters.sqlite_store import SqliteStore
+from azul.adapters.tablero_red_nacional import TableroRedNacional
 from azul.backup import backup_if_due
 from azul.config import Settings, get_settings
 from azul.core.conversation import (
@@ -40,7 +41,13 @@ from azul.core.conversation import (
     SearchNotice,
     TextChunk,
 )
-from azul.core.ports import Brain, SpeechToText, TextToSpeech, WeatherProvider
+from azul.core.ports import (
+    Brain,
+    RedNacional,
+    SpeechToText,
+    TextToSpeech,
+    WeatherProvider,
+)
 from azul.core.voice import (
     Heard,
     ListeningEnded,
@@ -72,6 +79,7 @@ def build_brain(settings: Settings) -> Brain:
     return AnthropicBrain(
         anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value()),
         model=settings.brain_model,
+        deep_model=settings.brain_model_deep,
         fallbacks=settings.anthropic_fallbacks,
         per_message_effort=settings.anthropic_per_message_effort,
         web_search_max_uses=settings.web_search_max_uses,
@@ -89,6 +97,12 @@ def build_voice(settings: Settings) -> tuple[SpeechToText, TextToSpeech]:
     )
 
 
+def build_red_nacional(settings: Settings) -> RedNacional | None:
+    if not settings.red_nacional_url:
+        return None
+    return TableroRedNacional(settings.red_nacional_url)
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -96,6 +110,7 @@ def create_app(
     stt: SpeechToText | None = None,
     tts: TextToSpeech | None = None,
     weather: WeatherProvider | None = None,
+    red_nacional: RedNacional | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     store = SqliteStore(settings.data_dir / "azul.db")
@@ -106,6 +121,7 @@ def create_app(
         monthly_budget_usd=settings.monthly_budget_usd,
         budget_warning_usd=settings.budget_warning_usd,
         weather=weather or OpenMeteoWeather(),
+        red_nacional=red_nacional or build_red_nacional(settings),
     )
     if stt is None or tts is None:
         default_stt, default_tts = build_voice(settings)
@@ -205,9 +221,24 @@ def create_app(
     # La app web compilada se sirve desde el mismo núcleo: un solo programa.
     # Se monta al final para que no tape las rutas /api.
     if settings.app_dist_dir.is_dir():
-        app.mount("/", StaticFiles(directory=settings.app_dist_dir, html=True), name="app")
+        app.mount("/", _AppFiles(directory=settings.app_dist_dir, html=True), name="app")
 
     return app
+
+
+class _AppFiles(StaticFiles):
+    """La app web, siempre en su última versión.
+
+    Los archivos de assets/ llevan un código en el nombre que cambia con cada
+    versión, así que pueden guardarse en caché. Las páginas y el manifiesto no:
+    sin esto, el navegador seguía mostrando la versión anterior de la app.
+    """
+
+    async def get_response(self, path: str, scope) -> Response:  # type: ignore[no-untyped-def]
+        response = await super().get_response(path, scope)
+        if not scope["path"].startswith("/assets/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 async def _voice_connection(socket: WebSocket, voice: VoiceSession) -> None:

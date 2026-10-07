@@ -1,6 +1,6 @@
 # 0005. El cerebro principal es Claude Opus 5.5
 
-- Estado: Aprobada (modificada el 2026-10-04: antes era Claude Opus 5)
+- Estado: Aprobada (modificada el 2026-10-04: antes era Claude Opus 5) (ajustada por ADR 0030: Opus queda para lo difícil)
 - Fecha: 2026-10-04
 - Capa: 2 (modelo de IA)
 - Tipo: A (difícil de revertir), mitigado por la interfaz `Brain`

@@ -125,12 +125,29 @@ class WeatherProvider(Protocol):
     async def forecast(self, place: str, days: int) -> dict[str, Any]: ...
 
 
+class RedNacionalError(Exception):
+    """Fallo al hablar con el tablero de Red Nacional, con un mensaje apto para el usuario."""
+
+
+class RedNacional(Protocol):
+    """El tablero de Red Nacional de Confianza IPS, en el PC de Optometría (ADR 0031).
+
+    Azul no hace el trabajo: le pide al tablero lo mismo que piden sus botones.
+    """
+
+    async def consultar(self, seccion: str, parametros: dict[str, str]) -> Any: ...
+
+    async def ejecutar(self, operacion: str, datos: dict[str, Any]) -> Any: ...
+
+
 class MemoryStore(Protocol):
     """La memoria: historial de conversación y datos sobre el usuario."""
 
     async def add_message(self, message: Message) -> None: ...
 
     async def recent_messages(self, limit: int) -> list[Message]: ...
+
+    async def message_count(self) -> int: ...
 
     async def add_fact(self, fact: Fact) -> bool: ...
 

@@ -21,3 +21,10 @@ Thumbs.db
 
 # Respaldos de la memoria personal (ADR 0022)
 respaldos/
+
+# Capturas de revisión del diseño (Impeccable)
+.impeccable/review/
+
+# Configuración local de herramientas (rutas de este equipo)
+.claude/
+.impeccable/hook.cache.json

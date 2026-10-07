@@ -76,6 +76,10 @@ class SqliteStore:
             for role, text, at, consulted in reversed(rows)
         ]
 
+    async def message_count(self) -> int:
+        rows = await self._read("SELECT COUNT(*) FROM messages", ())
+        return int(rows[0][0])
+
     async def add_fact(self, fact: Fact) -> bool:
         inserted = await self._write(
             "INSERT OR IGNORE INTO facts (text, created_at) VALUES (?, ?)",

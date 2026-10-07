@@ -284,3 +284,21 @@ async def test_answers_without_consultation_have_no_mark(store):
     await collect(conversation, "¿qué tal?")
 
     assert brain.requests[1].messages[-2].text == "Hola."
+
+
+async def test_history_window_start_stays_put_between_turns(store):
+    # Si el inicio de la ventana se moviera en cada turno, el historial nunca quedaría
+    # en la caché del proveedor y cada respuesta lo pagaría completo.
+    for index in range(25):
+        await store.add_message(Message("user", f"pregunta {index}"))
+        await store.add_message(Message("assistant", f"respuesta {index}"))
+    brain = FakeBrain(["ok"])
+    conversation = make_conversation(brain, store)
+
+    await collect(conversation, "una")
+    await collect(conversation, "otra")
+
+    first = [m.text for m in brain.requests[0].messages]
+    second = [m.text for m in brain.requests[1].messages]
+    assert second[: len(first)] == first
+    assert 40 <= len(first) < 60

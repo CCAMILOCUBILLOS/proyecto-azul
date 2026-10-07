@@ -35,6 +35,18 @@ def test_serves_web_app_when_built(settings):
     assert client.get("/api/salud").status_code == 200
 
 
+def test_web_app_pages_are_always_revalidated(settings):
+    # Sin esto, el navegador mostraba la versión anterior de la app tras actualizarla.
+    settings.app_dist_dir.mkdir(parents=True)
+    (settings.app_dist_dir / "index.html").write_text("<h1>Azul</h1>", encoding="utf-8")
+    (settings.app_dist_dir / "assets").mkdir()
+    (settings.app_dist_dir / "assets" / "index-abc.js").write_text("1", encoding="utf-8")
+    client = local_client(create_app(settings))
+
+    assert client.get("/").headers["cache-control"] == "no-cache"
+    assert "cache-control" not in client.get("/assets/index-abc.js").headers
+
+
 def test_runs_without_web_app(settings):
     client = local_client(create_app(settings))
 

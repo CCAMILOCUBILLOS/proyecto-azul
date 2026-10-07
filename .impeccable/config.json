@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "flat-type-hierarchy",
+        "value": "*",
+        "files": [
+          "app/index.html"
+        ],
+        "createdAt": "2026-10-06T04:35:43.629Z",
+        "reason": "Claude: false positive; the detector reads index.html without the Vite-imported style.css, where h1 is 1.15rem, the Azul subtitle up to 1.4rem, user subtitle 0.95rem"
+      }
+    ]
+  }
+}

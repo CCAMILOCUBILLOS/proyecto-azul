@@ -1,4 +1,5 @@
 import "./style.css";
+import { Orbe, type EstadoOrbe, type LecturaOrbe } from "./orbe";
 import { Voz, type EventoVoz } from "./voz";
 
 type Rol = "user" | "assistant";
@@ -18,6 +19,7 @@ interface Gasto {
 type EventoChat = Extract<EventoVoz, { tipo: "texto" | "buscando" | "gasto" | "error" | "fin" }>;
 
 const estado = elemento<HTMLParagraphElement>("#estado");
+const gastoDelMes = elemento<HTMLParagraphElement>("#gasto");
 const conversacion = elemento<HTMLElement>("#conversacion");
 const formulario = elemento<HTMLFormElement>("#formulario");
 const texto = elemento<HTMLTextAreaElement>("#texto");
@@ -98,7 +100,10 @@ async function actualizarGasto(): Promise<void> {
     const respuesta = await fetch("/api/gasto");
     if (!respuesta.ok) throw new Error(`HTTP ${respuesta.status}`);
     const gasto: Gasto = await respuesta.json();
-    estado.textContent = `Gasto del mes: ${dinero(gasto.gastado_mes)} de ${dinero(gasto.limite)}`;
+    const resumen = `Gasto del mes: ${dinero(gasto.gastado_mes)} de ${dinero(gasto.limite)}`;
+    // Arriba solo aparece si hay que avisar; el dato completo vive en el historial.
+    gastoDelMes.textContent = resumen;
+    estado.textContent = gasto.gastado_mes >= gasto.aviso ? resumen : "";
     estado.dataset.nivel = gasto.gastado_mes >= gasto.aviso ? "aviso" : "ok";
   } catch {
     estado.textContent = "No encuentro el núcleo de Azul. ¿Está encendido?";
@@ -214,7 +219,7 @@ async function enviar(mensaje: string): Promise<void> {
     if (!burbuja.textContent) burbuja.remove();
     respuestaEnCurso = null;
     actualizarBotones();
-    texto.focus();
+    if (!formulario.hidden) texto.focus();
     void actualizarGasto();
   }
 }
@@ -267,7 +272,7 @@ function alEventoDeVoz(evento: EventoVoz): void {
       respondiendoPorVoz = false;
       burbujaEscuchada?.remove();
       if (enConversacion && turnosEnConversacion > 0) {
-        terminarConversacion("Terminé la conversación. Toca 🎤 cuando quieras seguir.");
+        terminarConversacion("Terminé la conversación. Toca el micrófono cuando quieras seguir.");
       } else {
         terminarConversacion();
         agregarBurbuja("aviso", "No te escuché. Toca el micrófono y habla cuando se ilumine.");
@@ -448,6 +453,156 @@ botonParar.addEventListener("click", () => {
   actualizarBotones();
 });
 
+// --- Orbe y subtítulos: la voz domina la pantalla; el texto acompaña ---
+
+const escena = elemento<HTMLElement>("#escena");
+const subtitulos = elemento<HTMLElement>("#subtitulos");
+const estadoVoz = elemento<HTMLParagraphElement>("#estado-voz");
+const subtituloUsuario = elemento<HTMLParagraphElement>("#subtitulo-usuario");
+const subtituloAzul = elemento<HTMLParagraphElement>("#subtitulo-azul");
+
+function estadoVisual(): EstadoOrbe {
+  if (voz.sonando) return "hablando";
+  if (conversacion.querySelector(".burbuja.buscando")) return "buscando";
+  if (voz.escuchando) return "escuchando";
+  if (respondiendoPorVoz || respuestaEnCurso) return "pensando";
+  if (voz.oyeAzulActivo) return "atento";
+  return "reposo";
+}
+
+const TEXTO_DE_ESTADO: Record<EstadoOrbe, string> = {
+  reposo: "",
+  atento: "Di «Oye Azul»",
+  escuchando: "Te escucho…",
+  pensando: "Pensando…",
+  buscando: "Buscando en internet…",
+  hablando: "",
+};
+
+let estadoMostrado: EstadoOrbe | null = null;
+
+// Solo en desarrollo: ?estado=hablando muestra un estado sin hablar con Azul.
+const estadoDePrueba = import.meta.env.DEV
+  ? (new URLSearchParams(location.search).get("estado") as EstadoOrbe | null)
+  : null;
+
+// Los subtítulos acompañan la conversación y se desvanecen cuando Azul queda en calma.
+const SEGUNDOS_ANTES_DE_OCULTAR = 7;
+let ocultarSubtitulos: number | undefined;
+
+function mostrarFrases(visibles: boolean): void {
+  window.clearTimeout(ocultarSubtitulos);
+  subtitulos.dataset.frases = String(visibles);
+}
+
+function ocultarFrasesLuego(): void {
+  window.clearTimeout(ocultarSubtitulos);
+  ocultarSubtitulos = window.setTimeout(() => mostrarFrases(false), SEGUNDOS_ANTES_DE_OCULTAR * 1000);
+}
+
+function enCalma(estadoActual: EstadoOrbe): boolean {
+  return estadoActual === "reposo" || estadoActual === "atento";
+}
+
+let espectroDePrueba: Uint8Array | null = null;
+
+function leerOrbe(): LecturaOrbe {
+  const estadoActual = estadoDePrueba ?? estadoVisual();
+  if (estadoActual !== estadoMostrado) {
+    estadoMostrado = estadoActual;
+    document.body.dataset.voz = estadoActual;
+    estadoVoz.textContent = TEXTO_DE_ESTADO[estadoActual];
+    if (enCalma(estadoActual)) ocultarFrasesLuego();
+    else if (subtituloUsuario.textContent || subtituloAzul.textContent) mostrarFrases(true);
+  }
+  const reservaInferior = subtitulos.dataset.frases === "true" ? subtitulos.offsetHeight : estadoVoz.offsetHeight;
+  if (estadoDePrueba === "hablando") {
+    // Un volumen y un espectro sintéticos que suben y bajan como sílabas.
+    const t = performance.now() / 1000;
+    const nivel = Math.max(0.03, Math.sin(t * 9) * Math.sin(t * 2.3)) * 0.14;
+    espectroDePrueba ??= new Uint8Array(512);
+    for (let i = 0; i < espectroDePrueba.length; i++) {
+      espectroDePrueba[i] = Math.max(0, 255 * nivel * 6 * Math.exp(-i / 40) * (0.6 + 0.4 * Math.sin(i * 0.7 + t * 11)));
+    }
+    return { estado: estadoActual, nivel, espectro: espectroDePrueba, reservaInferior };
+  }
+  return { estado: estadoActual, nivel: voz.nivelDeSalida, espectro: voz.espectroDeSalida, reservaInferior };
+}
+
+new Orbe(elemento<HTMLCanvasElement>("#orbe"), escena, leerOrbe);
+
+const LARGO_SUBTITULO = 200;
+
+/** Lo último de un texto largo, empezando en una frase: así se lee como subtítulo. */
+function finalDe(textoCompleto: string): string {
+  const limpio = textoCompleto.trim();
+  if (limpio.length <= LARGO_SUBTITULO) return limpio;
+  const cola = limpio.slice(-LARGO_SUBTITULO);
+  const inicioDeFrase = cola.search(/[.!?…]\s+\S/);
+  return inicioDeFrase >= 0 ? cola.slice(inicioDeFrase + 1).trimStart() : `…${cola.trimStart()}`;
+}
+
+// Los subtítulos reflejan las dos últimas intervenciones del historial.
+function actualizarSubtitulos(): void {
+  const burbujas = conversacion.querySelectorAll<HTMLDivElement>(".burbuja");
+  const ultima = burbujas[burbujas.length - 1];
+  let deUsuario: HTMLDivElement | undefined;
+  let deAzul: HTMLDivElement | undefined;
+  if (ultima?.classList.contains("user")) {
+    deUsuario = ultima;
+  } else if (ultima) {
+    deAzul = ultima;
+    const anterior = burbujas[burbujas.length - 2];
+    if (anterior?.classList.contains("user")) deUsuario = anterior;
+  }
+  subtituloUsuario.textContent = deUsuario ? finalDe(deUsuario.textContent ?? "") : "";
+  subtituloAzul.textContent = deAzul ? finalDe(deAzul.textContent ?? "") : "";
+  subtituloAzul.dataset.tipo = deAzul?.classList.contains("aviso") ? "aviso" : "azul";
+  if (subtituloUsuario.textContent || subtituloAzul.textContent) {
+    mostrarFrases(true);
+    // Un aviso o una respuesta escrita también se van solos si Azul ya está en calma.
+    if (estadoMostrado && enCalma(estadoMostrado)) ocultarFrasesLuego();
+  }
+}
+
+const observadorDeSubtitulos = new MutationObserver(actualizarSubtitulos);
+
+// Al abrir la app, la conversación anterior queda en el historial, no en pantalla.
+function seguirSubtitulos(): void {
+  observadorDeSubtitulos.observe(conversacion, { childList: true, characterData: true, subtree: true });
+  if (estadoDePrueba) actualizarSubtitulos();
+}
+
+// --- Teclado e historial ---
+
+const botonTeclado = elemento<HTMLButtonElement>("#teclado");
+const historial = elemento<HTMLElement>("#historial");
+const botonHistorial = elemento<HTMLButtonElement>("#abrir-historial");
+const botonCerrarHistorial = elemento<HTMLButtonElement>("#cerrar-historial");
+
+botonTeclado.addEventListener("click", () => {
+  formulario.hidden = !formulario.hidden;
+  botonTeclado.setAttribute("aria-expanded", String(!formulario.hidden));
+  if (!formulario.hidden) texto.focus();
+});
+
+function mostrarHistorial(abierto: boolean): void {
+  historial.hidden = !abierto;
+  botonHistorial.setAttribute("aria-expanded", String(abierto));
+  if (abierto) {
+    bajarAlFinal();
+    botonCerrarHistorial.focus();
+  } else {
+    botonHistorial.focus();
+  }
+}
+
+botonHistorial.addEventListener("click", () => mostrarHistorial(historial.hasAttribute("hidden")));
+botonCerrarHistorial.addEventListener("click", () => mostrarHistorial(false));
+document.addEventListener("keydown", (evento) => {
+  if (evento.key === "Escape" && !historial.hidden) mostrarHistorial(false);
+});
+
 // --- Clave de acceso (solo desde otros dispositivos, como el celular) ---
 
 const dialogoEntrada = elemento<HTMLDialogElement>("#entrada");
@@ -506,8 +661,8 @@ async function iniciar(): Promise<void> {
     // Sin núcleo: actualizarGasto mostrará el aviso.
   }
   await cargarHistorial();
+  seguirSubtitulos();
   await actualizarGasto();
-  texto.focus();
 }
 
 void iniciar();

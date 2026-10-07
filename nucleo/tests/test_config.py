@@ -7,7 +7,8 @@ from azul.config import Settings
 def test_defaults(settings):
     assert settings.host == "127.0.0.1"
     assert settings.port == 8710
-    assert settings.brain_model == "claude-opus-5-5"
+    assert settings.brain_model == "claude-sonnet-5-5"
+    assert settings.brain_model_deep == "claude-opus-5-5"
     assert settings.monthly_budget_usd == 50.0
     assert settings.budget_warning_usd == 40.0
     assert settings.anthropic_api_key is None

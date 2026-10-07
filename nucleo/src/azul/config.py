@@ -41,12 +41,17 @@ class Settings(BaseSettings):
     deepgram_api_key: SecretStr | None = Field(default=None, validation_alias="DEEPGRAM_API_KEY")
 
     # Cerebro (ADR 0005, 0014, 0015).
-    brain_model: str = "claude-opus-5-5"
+    # Mezcla de modelos (ADR 0030): lo cotidiano con Sonnet; "piénsalo a fondo" con Opus.
+    brain_model: str = "claude-sonnet-5-5"
+    brain_model_deep: str = "claude-opus-5-5"
     # Funciones beta de Anthropic; se pueden apagar si el proveedor las rechaza.
     anthropic_fallbacks: bool = True
     anthropic_per_message_effort: bool = True
     # Cada búsqueda tarda 8-12 s: 2 como máximo por respuesta (antes 3).
     web_search_max_uses: int = Field(default=2, ge=0)
+    # Tablero de Red Nacional en el PC de Optometría, por Tailscale (ADR 0031).
+    # Vacío: Azul no ofrece esas herramientas.
+    red_nacional_url: str = ""
 
     # Oído y voz (ADR 0006). Voz elegida por el usuario el 2026-10-05: Gloria (colombiana).
     stt_model: str = "nova-3"

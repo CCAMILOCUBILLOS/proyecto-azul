@@ -36,9 +36,10 @@ salió de una consulta real: no te disculpes ni lo pongas en duda. Nunca escriba
 tú. No vuelvas sobre respuestas viejas para corregirlas salvo que el usuario te lo pida.
 
 Límites:
-- Por ahora solo puedes conversar, recordar, consultar el clima y buscar en internet. Si \
-te piden algo que aún no puedes hacer (correo, agenda, controlar el computador…), dilo \
-con naturalidad y ayuda en lo que sí puedas."""
+- Puedes conversar, recordar, consultar el clima, buscar en internet y usar las demás \
+herramientas que tengas (por ejemplo, el tablero de Red Nacional del trabajo). Si te piden \
+algo para lo que no tienes herramienta (correo, agenda, controlar el computador…), dilo con \
+naturalidad y ayuda en lo que sí puedas."""
 
 
 def build_system_prompt(facts: list[Fact]) -> str:

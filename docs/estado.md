@@ -96,6 +96,20 @@
 - Velocidad: esfuerzo bajo por defecto, precalentamiento y "Déjame buscarlo" al buscar.
 - 188 pruebas automáticas.
 
+## Cara visual (en curso, ADR 0029)
+- Orbe neuronal en azul, morado y negro que escucha, piensa, busca y habla; la luz sigue el volumen de la voz de Azul.
+- Subtítulos de la frase actual; historial y teclado detrás de botones.
+- ⏳ Pendiente: prueba del usuario en el iPhone y en el PC.
+
+## Costo del cerebro (ADR 0030)
+- Lo cotidiano lo responde Claude Sonnet 5.5; "piénsalo a fondo", Claude Opus 5.5.
+- La ventana del historial se mueve de a 20 mensajes para aprovechar la caché.
+- Prueba real: respuesta corta a 0,21 ¢ (antes ~2,4 ¢ en promedio con Opus) y primer texto en 1,4 s.
+
+## Red Nacional (ADR 0031, en curso)
+- Herramientas listas y probadas: consultar el tablero y lanzar sus procesos por voz, con autonomía total.
+- ⏳ Falta: instalar Tailscale en el PC de Optometría, publicar el tablero (`tailscale serve --bg 8765`) y poner su dirección en `AZUL_RED_NACIONAL_URL`.
+
 ## Próximos pasos
 - Cerrar la v0.3: confirmar "Oye Azul" en el portátil; commit, subida a GitHub y etiqueta `v0.3.0` con aprobación del usuario.
 - La siguiente capacidad la elige el usuario (ADR 0017): productividad con Google y Microsoft, más control del PC, conocimiento (documentos), casa inteligente (en pausa).
@@ -109,4 +123,3 @@
 ### Otros pendientes
 - Confirmar la memoria al día siguiente ("¿cómo me llamo?").
 - Descartada por ahora: bajar el silencio de fin a 0,8 s. Pendiente de evaluar: voz por streaming de Deepgram.
-- Optimización de costo: la ventana del historial (40 mensajes) se corre en cada turno y rehace la caché de los mensajes; conviene moverla por bloques.

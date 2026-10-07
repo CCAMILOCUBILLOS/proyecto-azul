@@ -1,4 +1,4 @@
-"""Adaptador del cerebro para Claude, de Anthropic (ADR 0005, 0014, 0015)."""
+"""Adaptador del cerebro para Claude, de Anthropic (ADR 0005, 0014, 0015, 0030)."""
 
 import logging
 from collections.abc import AsyncIterator
@@ -30,6 +30,7 @@ PRICES: dict[str, tuple[float, float, float, float]] = {
     "claude-opus-5-5": (4.00, 20.00, 5.00, 0.20),
     "claude-opus-5": (5.00, 25.00, 6.25, 0.50),
     "claude-opus-4-8": (5.00, 25.00, 6.25, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00, 2.50, 0.20),
     "claude-sonnet-5": (2.00, 10.00, 2.50, 0.20),
     "claude-haiku-4-5": (1.00, 5.00, 1.25, 0.10),
 }
@@ -65,17 +66,25 @@ def _price_for(model: str) -> tuple[float, float, float, float]:
 
 
 class AnthropicBrain:
+    """Dos modelos (ADR 0030): uno para lo cotidiano y otro para pensar a fondo.
+
+    El núcleo solo dice cuánto pensar (Effort); qué modelo lo hace es asunto de
+    este adaptador. Lo de esfuerzo alto va al modelo profundo.
+    """
+
     def __init__(
         self,
         client: anthropic.AsyncAnthropic,
         *,
         model: str,
+        deep_model: str | None = None,
         fallbacks: bool = True,
         per_message_effort: bool = True,
         web_search_max_uses: int = 3,
     ) -> None:
         self._client = client
         self._model = model
+        self._deep_model = deep_model or model
         self._fallbacks = fallbacks
         self._per_message_effort = per_message_effort
         self._web_search_max_uses = web_search_max_uses
@@ -140,7 +149,8 @@ class AnthropicBrain:
 
         Usa max_tokens=0: el proveedor solo procesa el prefijo, sin generar respuesta.
         """
-        params = self._base_params(request)
+        # Se precalienta el modelo cotidiano: es el que responde casi siempre.
+        params = self._base_params(request, model=self._model)
         # La caché se marca en lo compartido con la próxima solicitud real, no al final.
         params.pop("cache_control")
         params.pop("fallbacks", None)
@@ -198,10 +208,13 @@ class AnthropicBrain:
             messages.append({"role": "system", "content": request.context})
         return messages
 
-    def _base_params(self, request: BrainRequest) -> dict[str, Any]:
+    def model_for(self, effort: Effort) -> str:
+        return self._deep_model if effort is Effort.HIGH else self._model
+
+    def _base_params(self, request: BrainRequest, *, model: str | None = None) -> dict[str, Any]:
         betas: list[str] = []
         params: dict[str, Any] = {
-            "model": self._model,
+            "model": model or self.model_for(request.effort),
             "max_tokens": MAX_TOKENS,
             "system": [
                 {"type": "text", "text": request.system, "cache_control": {"type": "ephemeral"}}

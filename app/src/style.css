@@ -1,14 +1,21 @@
 :root {
-  --fondo: #0b1d3a;
-  --superficie: #12284d;
-  --borde: #1f3a66;
-  --texto: #e6eefc;
-  --suave: #8aa4d6;
-  --acento: #3d8bff;
-  --usuario: #1e4f99;
-  --ok: #5fd3a1;
-  --aviso: #ffc46b;
-  --error: #ff8a7a;
+  /* Negro con tinte índigo, azul de marca y violeta: la paleta del orbe neuronal. */
+  --fondo: #000;
+  --fondo-alto: #0a0a1f;
+  --superficie: #0f1030;
+  --borde: #23255a;
+  --borde-suave: #181a44;
+  --texto: #e9edff;
+  --suave: #9ea6d9;
+  --tenue: #6f73b0;
+  --azul: #3d8bff;
+  --azul-claro: #96c4ff;
+  --violeta: #8b5cf6;
+  --morado: #c084fc;
+  --usuario: #1b2a6b;
+  --aviso: #ffcf7a;
+  --error: #ff8f86;
+  --curva: cubic-bezier(0.16, 1, 0.3, 1);
   color-scheme: dark;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -17,97 +24,151 @@
   box-sizing: border-box;
 }
 
+/* El vacío del espacio: negro total; las estrellas y Azul las dibuja el lienzo. */
 body {
   margin: 0;
+  min-height: 100dvh;
+  overflow: hidden;
   background: var(--fondo);
   color: var(--texto);
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: rgb(139 92 246 / 45%);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid var(--azul-claro);
+  outline-offset: 3px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--borde) transparent;
 }
 
 .shell {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr auto auto;
   height: 100dvh;
-  max-width: 760px;
-  margin: 0 auto;
   padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
 }
 
+/* --- Franja superior --- */
+
 .top {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: flex-start;
+  justify-content: flex-end;
   gap: 12px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--borde);
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 14px 0 0;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
+/* El ícono de Azul: anillo y núcleo. */
 .orb {
-  width: 14px;
-  height: 14px;
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid var(--azul);
   border-radius: 50%;
-  background: var(--acento);
-  box-shadow: 0 0 12px var(--acento);
+  box-shadow: 0 0 10px rgb(61 139 255 / 55%);
 }
 
-h1 {
-  margin: 0;
-  font-size: 1.25rem;
-  letter-spacing: 0.06em;
+.orb::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--azul);
 }
 
 .controles {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
+  gap: 6px;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
 }
 
 button.oye-azul {
-  min-width: 0;
-  min-height: 32px;
-  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 14px;
   border: 1px solid var(--borde);
   border-radius: 999px;
-  background: transparent;
+  background: rgb(15 16 48 / 60%);
   color: var(--suave);
   font-size: 0.85rem;
+  font-weight: 550;
+  transition:
+    border-color 0.3s var(--curva),
+    color 0.3s var(--curva);
+}
+
+button.oye-azul::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tenue);
+  transition: background-color 0.3s var(--curva);
+}
+
+button.oye-azul:hover {
+  border-color: var(--azul);
+  color: var(--texto);
 }
 
 button.oye-azul[aria-pressed="true"] {
-  border-color: var(--acento);
+  border-color: var(--azul);
   /* Nivel del micrófono como un relleno que crece de izquierda a derecha. */
   background: linear-gradient(
     to right,
-    rgb(61 139 255 / 45%) calc(var(--nivel, 0) * 100%),
-    rgb(61 139 255 / 12%) calc(var(--nivel, 0) * 100%)
+    rgb(61 139 255 / 42%) calc(var(--nivel, 0) * 100%),
+    rgb(61 139 255 / 10%) calc(var(--nivel, 0) * 100%)
   );
   color: var(--texto);
 }
 
+button.oye-azul[aria-pressed="true"]::before {
+  background: var(--azul-claro);
+  box-shadow: 0 0 8px var(--azul);
+}
+
 button.oye-azul[aria-pressed="true"][data-enviando="true"] {
-  border-color: var(--ok);
+  border-color: var(--morado);
   background: linear-gradient(
     to right,
-    rgb(95 211 161 / 45%) calc(var(--nivel, 0) * 100%),
-    rgb(95 211 161 / 12%) calc(var(--nivel, 0) * 100%)
+    rgb(192 132 252 / 45%) calc(var(--nivel, 0) * 100%),
+    rgb(192 132 252 / 12%) calc(var(--nivel, 0) * 100%)
   );
 }
 
-button.oye-azul[aria-pressed="true"]::before {
-  content: "● ";
-  color: var(--ok);
+button.oye-azul[aria-pressed="true"][data-enviando="true"]::before {
+  background: var(--morado);
+  box-shadow: 0 0 8px var(--morado);
+}
+
+.estado:empty {
+  display: none;
 }
 
 .estado {
   margin: 0;
-  font-size: 0.8rem;
-  color: var(--suave);
+  font-size: 0.75rem;
+  color: var(--tenue);
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
@@ -119,135 +180,262 @@ button.oye-azul[aria-pressed="true"]::before {
   color: var(--error);
 }
 
-.conversacion {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 16px 0;
-  overflow-y: auto;
+/* --- Escena: el orbe y los subtítulos --- */
+
+/* El lienzo cubre toda la ventana, detrás de todo: estrellas, orbe y su halo. */
+.orbe {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
-.burbuja {
-  max-width: 85%;
-  padding: 10px 14px;
-  border-radius: 16px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+.shell {
+  position: relative;
+  z-index: 1;
 }
 
-.burbuja.user {
-  align-self: flex-end;
-  background: var(--usuario);
-  border-bottom-right-radius: 4px;
+/* La escena es el lugar del orbe; los subtítulos flotan al pie. */
+.escena {
+  position: relative;
+  min-height: 0;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
 }
 
-.burbuja.assistant {
-  align-self: flex-start;
-  background: var(--superficie);
-  border: 1px solid var(--borde);
-  border-bottom-left-radius: 4px;
-}
-
-.burbuja.aviso {
-  align-self: center;
-  max-width: 95%;
-  font-size: 0.85rem;
-  color: var(--aviso);
-  background: transparent;
-  border: 1px dashed var(--borde);
+.subtitulos {
+  position: absolute;
+  inset: auto 0 0;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 0 8px 12px;
   text-align: center;
+  text-shadow: 0 0 14px #000, 0 0 4px #000;
 }
 
-.burbuja.pensando::after {
-  content: "…";
+.frases {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  transition:
+    opacity 0.9s var(--curva),
+    transform 0.9s var(--curva),
+    visibility 0s linear 0s;
+}
+
+/* Cuando Azul queda en calma, las frases se desvanecen; siguen en el historial. */
+.subtitulos[data-frases="false"] .frases {
+  opacity: 0;
+  transform: translateY(8px);
+  visibility: hidden;
+  transition:
+    opacity 0.9s var(--curva),
+    transform 0.9s var(--curva),
+    visibility 0s linear 0.9s;
+}
+
+.estado-voz {
+  min-height: 1.45em;
+  margin: 0;
+  color: var(--azul-claro);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+body[data-voz="buscando"] .estado-voz,
+body[data-voz="pensando"] .estado-voz {
+  color: var(--morado);
+}
+
+body[data-voz="atento"] .estado-voz {
+  color: var(--tenue);
+}
+
+/* El micrófono acompaña la luz del orbe. */
+.orb {
+  transition:
+    border-color 0.4s var(--curva),
+    box-shadow 0.4s var(--curva);
+}
+
+body[data-voz="hablando"] button.microfono {
+  box-shadow:
+    0 6px 28px rgb(61 139 255 / 45%),
+    0 0 0 6px rgb(139 92 246 / 16%);
+}
+
+.subtitulo-usuario,
+.subtitulo-azul {
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.subtitulo-usuario {
+  max-width: 34rem;
   color: var(--suave);
-  animation: latido 1s ease-in-out infinite;
+  font-size: 0.95rem;
+  line-height: 1.45;
 }
 
-.burbuja.escuchando {
-  opacity: 0.75;
+.subtitulo-azul {
+  max-width: 36rem;
+  color: var(--texto);
+  font-size: clamp(1.1rem, 1rem + 0.6vw, 1.4rem);
+  font-weight: 500;
+  line-height: 1.42;
 }
 
-.burbuja.escuchando:empty::after {
-  content: "Escuchando…";
-  color: var(--suave);
+.subtitulo-azul[data-tipo="aviso"] {
+  color: var(--aviso);
+  font-size: 0.95rem;
+  font-weight: 450;
 }
 
-.burbuja.buscando::after {
-  content: " Buscando en internet…";
-  color: var(--suave);
-  font-size: 0.85em;
+.subtitulo-usuario:empty,
+.subtitulo-azul:empty {
+  display: none;
 }
 
-.burbuja.interrumpida::after {
-  content: " (interrumpido)";
-  color: var(--suave);
-  font-size: 0.8em;
-}
-
-@keyframes latido {
-  50% {
-    opacity: 0.3;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .burbuja.pensando::after {
-    animation: none;
-  }
-}
+/* --- Escribir --- */
 
 .entrada {
   display: flex;
   gap: 8px;
-  padding: 12px 0 16px;
-  border-top: 1px solid var(--borde);
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 4px 0 10px;
+}
+
+.entrada[hidden] {
+  display: none;
 }
 
 textarea {
   flex: 1;
-  min-height: 44px;
+  min-height: 46px;
   max-height: 160px;
-  padding: 11px 14px;
+  padding: 12px 16px;
   border: 1px solid var(--borde);
-  border-radius: 12px;
-  background: var(--superficie);
+  border-radius: 23px;
+  background: rgb(15 16 48 / 75%);
   color: var(--texto);
   font: inherit;
+  /* 16px evita que iPhone haga zoom al escribir. */
+  font-size: 16px;
   resize: none;
+  caret-color: var(--azul-claro);
 }
 
-textarea:focus-visible,
-button:focus-visible {
-  outline: 2px solid var(--acento);
-  outline-offset: 2px;
+textarea::placeholder {
+  color: var(--tenue);
 }
 
-button {
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--azul);
+}
+
+.enviar,
+.parar {
   min-width: 88px;
-  min-height: 44px;
+  min-height: 46px;
+  padding: 0 18px;
   border: 0;
-  border-radius: 12px;
-  background: var(--acento);
+  border-radius: 23px;
+  background: var(--azul);
   color: #fff;
-  font: inherit;
   font-weight: 600;
-  cursor: pointer;
+  transition: background-color 0.2s var(--curva);
 }
 
-button.parar {
-  background: var(--error);
-  color: #2a0d08;
+.enviar:hover {
+  background: #5a9cff;
+}
+
+.parar {
+  background: var(--violeta);
+}
+
+/* --- Controles inferiores --- */
+
+.pie {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  max-width: 22rem;
+  margin: 0 auto;
+  padding: 6px 0 18px;
+}
+
+.pie > :first-child {
+  justify-self: end;
+}
+
+.pie > :last-child {
+  justify-self: start;
+}
+
+.boton-redondo {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid var(--borde);
+  border-radius: 50%;
+  background: rgb(15 16 48 / 60%);
+  color: var(--suave);
+  transition:
+    border-color 0.25s var(--curva),
+    color 0.25s var(--curva);
+}
+
+.boton-redondo:hover,
+.boton-redondo[aria-expanded="true"] {
+  border-color: var(--azul);
+  color: var(--texto);
+}
+
+.boton-redondo svg,
+.microfono svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 button.microfono {
+  position: relative;
   display: grid;
   place-items: center;
-  min-width: 52px;
+  width: 74px;
+  height: 74px;
   padding: 0;
-  background: var(--superficie);
-  border: 1px solid var(--borde);
+  border: 1.5px solid var(--azul);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, #16185a 0%, #0b0b26 100%);
+  color: var(--texto);
+  box-shadow: 0 6px 24px rgb(20 30 120 / 45%);
+  transition:
+    background 0.3s var(--curva),
+    border-color 0.3s var(--curva),
+    box-shadow 0.3s var(--curva);
   /* Mantener presionado no debe seleccionar texto ni abrir menús en el celular. */
   touch-action: none;
   user-select: none;
@@ -256,9 +444,12 @@ button.microfono {
 }
 
 button.microfono svg {
-  width: 24px;
-  height: 24px;
-  fill: var(--texto);
+  width: 28px;
+  height: 28px;
+}
+
+button.microfono:hover {
+  box-shadow: 0 6px 28px rgb(61 139 255 / 40%);
 }
 
 button.microfono .icono-detener,
@@ -270,80 +461,208 @@ button.microfono[data-estado="respondiendo"] .icono-detener {
   display: block;
 }
 
+button.microfono[data-estado="respondiendo"] .icono-detener rect {
+  fill: currentcolor;
+  stroke: none;
+}
+
 button.microfono[data-estado="escuchando"] {
-  background: var(--acento);
-  border-color: var(--acento);
-  box-shadow: 0 0 0 4px rgb(61 139 255 / 35%);
+  background: radial-gradient(circle at 50% 40%, #5aa0ff 0%, var(--azul) 70%);
+  border-color: var(--azul-claro);
+  box-shadow:
+    0 6px 24px rgb(61 139 255 / 50%),
+    0 0 0 6px rgb(61 139 255 / 18%);
 }
 
 button.microfono[data-estado="respondiendo"] {
-  border-color: var(--error);
+  border-color: var(--morado);
+  color: var(--morado);
 }
 
-/* En modo conversación, un anillo verde indica que Azul volverá a escuchar sola. */
-button.microfono[data-conversacion="true"][data-estado="inactivo"],
-button.microfono[data-conversacion="true"][data-estado="respondiendo"] {
-  outline: 2px solid var(--ok);
-  outline-offset: 2px;
-}
-
-button.microfono[data-estado="respondiendo"] svg {
-  fill: var(--error);
+/* En modo conversación, un anillo violeta indica que Azul volverá a escuchar sola. */
+button.microfono[data-conversacion="true"]::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border: 1.5px solid rgb(192 132 252 / 70%);
+  border-radius: 50%;
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: no-preference) {
   button.microfono[data-estado="escuchando"] {
-    animation: escucha 1.2s ease-in-out infinite;
+    animation: escucha 3.2s ease-in-out infinite;
   }
 }
 
 @keyframes escucha {
   50% {
-    box-shadow: 0 0 0 8px rgb(61 139 255 / 15%);
+    box-shadow:
+      0 6px 24px rgb(61 139 255 / 50%),
+      0 0 0 11px rgb(61 139 255 / 8%);
   }
 }
+
+/* --- Historial --- */
+
+.historial {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 10;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  width: min(440px, 100%);
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  border-left: 1px solid var(--borde-suave);
+  background: rgb(7 7 22 / 96%);
+  box-shadow: -24px 0 60px rgb(0 0 0 / 55%);
+  transition:
+    transform 0.45s var(--curva),
+    opacity 0.45s var(--curva);
+}
+
+.historial[hidden] {
+  display: none;
+}
+
+@starting-style {
+  .historial {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+}
+
+.historial-encabezado {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px 20px;
+  border-bottom: 1px solid var(--borde-suave);
+}
+
+.gasto {
+  margin: 2px 0 0;
+  color: var(--tenue);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.historial-encabezado h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.conversacion {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.burbuja {
+  max-width: 88%;
+  padding: 10px 14px;
+  border-radius: 18px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.burbuja.user {
+  align-self: flex-end;
+  background: var(--usuario);
+  border-bottom-right-radius: 6px;
+}
+
+.burbuja.assistant {
+  align-self: flex-start;
+  background: var(--superficie);
+  border: 1px solid var(--borde-suave);
+  border-bottom-left-radius: 6px;
+}
+
+.burbuja.aviso {
+  align-self: center;
+  max-width: 95%;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  color: var(--aviso);
+  background: transparent;
+  text-align: center;
+}
+
+.burbuja.pensando:empty::after {
+  content: "Pensando…";
+  color: var(--tenue);
+}
+
+.burbuja.escuchando {
+  opacity: 0.75;
+}
+
+.burbuja.escuchando:empty::after {
+  content: "Escuchando…";
+  color: var(--tenue);
+}
+
+.burbuja.buscando::after {
+  content: " Buscando en internet…";
+  color: var(--morado);
+  font-size: 0.85em;
+}
+
+.burbuja.interrumpida::after {
+  content: " (interrumpido)";
+  color: var(--tenue);
+  font-size: 0.8em;
+}
+
+/* --- Clave de acceso --- */
 
 .entrada-clave {
   width: min(360px, calc(100vw - 32px));
   padding: 28px 24px;
   border: 1px solid var(--borde);
-  border-radius: 16px;
-  background: var(--superficie);
+  border-radius: 20px;
+  background: var(--fondo-alto);
   color: var(--texto);
   text-align: center;
+  box-shadow: 0 24px 60px rgb(0 0 0 / 60%);
 }
 
 .entrada-clave::backdrop {
-  background: rgb(5 12 26 / 85%);
+  background: rgb(3 3 12 / 88%);
 }
 
 .entrada-clave .orb {
   display: inline-block;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .entrada-clave h2 {
   margin: 0 0 8px;
-  font-size: 1.5rem;
+  font-size: 1.4rem;
 }
 
 .entrada-clave p {
   margin: 0 0 16px;
   color: var(--suave);
   font-size: 0.9rem;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .entrada-clave input {
   width: 100%;
-  min-height: 44px;
-  padding: 10px 14px;
+  min-height: 46px;
+  padding: 10px 16px;
   border: 1px solid var(--borde);
-  border-radius: 12px;
+  border-radius: 23px;
   background: var(--fondo);
   color: var(--texto);
   font: inherit;
-  /* 16px evita que iPhone haga zoom al escribir. */
   font-size: 16px;
 }
 
@@ -355,6 +674,12 @@ button.microfono[data-estado="respondiendo"] svg {
 
 .entrada-clave button {
   width: 100%;
+  min-height: 46px;
+  border: 0;
+  border-radius: 23px;
+  background: var(--azul);
+  color: #fff;
+  font-weight: 600;
 }
 
 .solo-lector {
@@ -364,4 +689,18 @@ button.microfono[data-estado="respondiendo"] svg {
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .historial {
+    width: 100%;
+    border-left: 0;
+    background: var(--fondo);
+  }
+
+  @starting-style {
+    .historial {
+      transform: translateY(40px);
+    }
+  }
 }

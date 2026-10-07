@@ -41,6 +41,10 @@ export class Voz {
   private turnoActivacion = false;
   private reintentos = 0;
   private reconexionPendiente = false;
+  // Mide el volumen de la voz de Azul para que el orbe se ilumine con ella.
+  private analizador: AnalyserNode | null = null;
+  private muestrasSalida: Float32Array<ArrayBuffer> | null = null;
+  private bandasSalida: Uint8Array<ArrayBuffer> | null = null;
 
   constructor(
     private readonly alEvento: (evento: EventoVoz) => void,
@@ -62,6 +66,22 @@ export class Voz {
   /** Volumen actual relativo al umbral de detección (≥ 1 cuenta como voz). */
   get nivelDeVoz(): number {
     return this.detector?.nivelRelativo ?? 0;
+  }
+
+  /** Volumen (RMS, 0 a 1) de la voz de Azul en este instante; 0 si no habla. */
+  get nivelDeSalida(): number {
+    if (!this.analizador || !this.muestrasSalida || !this.sonando) return 0;
+    this.analizador.getFloatTimeDomainData(this.muestrasSalida);
+    let suma = 0;
+    for (const muestra of this.muestrasSalida) suma += muestra * muestra;
+    return Math.sqrt(suma / this.muestrasSalida.length);
+  }
+
+  /** Espectro de la voz de Azul (0 a 255 por banda), o null si no habla. */
+  get espectroDeSalida(): Uint8Array | null {
+    if (!this.analizador || !this.bandasSalida || !this.sonando) return null;
+    this.analizador.getByteFrequencyData(this.bandasSalida);
+    return this.bandasSalida;
   }
 
   get fragmentoEnCurso(): boolean {
@@ -145,6 +165,17 @@ export class Voz {
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify({ tipo: "parar" }));
     }
+  }
+
+  private salida(contexto: AudioContext): AudioNode {
+    if (!this.analizador) {
+      this.analizador = contexto.createAnalyser();
+      this.analizador.fftSize = 1024;
+      this.muestrasSalida = new Float32Array(this.analizador.fftSize);
+      this.bandasSalida = new Uint8Array(this.analizador.frequencyBinCount);
+      this.analizador.connect(contexto.destination);
+    }
+    return this.analizador;
   }
 
   private asegurarContexto(): AudioContext {
@@ -281,7 +312,7 @@ export class Voz {
         if (generacion !== this.generacion) return; // llegó tarde: Azul ya fue interrumpido
         const fuente = contexto.createBufferSource();
         fuente.buffer = audio;
-        fuente.connect(contexto.destination);
+        fuente.connect(this.salida(contexto));
         const inicio = Math.max(contexto.currentTime, this.siguienteInicio);
         fuente.start(inicio);
         this.siguienteInicio = inicio + audio.duration;

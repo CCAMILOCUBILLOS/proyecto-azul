@@ -19,6 +19,7 @@ from azul.core.ports import (
     Fact,
     MemoryStore,
     Message,
+    RedNacional,
     Searching,
     ToolSpec,
     Usage,
@@ -26,10 +27,15 @@ from azul.core.ports import (
     WeatherError,
     WeatherProvider,
 )
+from azul.core.red_nacional import herramientas_red_nacional
 
 log = logging.getLogger(__name__)
 
-HISTORY_LIMIT = 40
+# Ventana del historial que ve el cerebro: entre 40 y 59 mensajes. Su inicio se mueve
+# de a 20 mensajes, no en cada turno: así el historial sigue en la caché del
+# proveedor (que se paga al 10 %) y solo se reescribe una vez cada 10 turnos.
+HISTORY_MIN = 40
+HISTORY_STEP = 20
 MAX_FACT_CHARS = 300
 # La caché del proveedor dura 5 minutos; con 4 hay margen.
 CACHE_FRESH_SECONDS = 240
@@ -90,6 +96,7 @@ class Conversation:
         monthly_budget_usd: float,
         budget_warning_usd: float,
         weather: WeatherProvider | None = None,
+        red_nacional: RedNacional | None = None,
         now: Callable[[], datetime] = datetime.now,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -132,6 +139,10 @@ class Conversation:
                     handler=self._weather_tool,
                 )
             )
+        if red_nacional is not None:
+            self._tools.extend(
+                herramientas_red_nacional(red_nacional, lambda texto: self._consulted.append(texto))
+            )
 
     async def reply(self, user_text: str) -> AsyncIterator[ReplyEvent]:
         spent = await self._meter.month_total_usd()
@@ -142,9 +153,7 @@ class Conversation:
         await self._memory.add_message(Message("user", user_text))
         request = BrainRequest(
             system=build_system_prompt(await self._memory.facts()),
-            messages=_for_brain(
-                _starting_with_user(await self._memory.recent_messages(HISTORY_LIMIT))
-            ),
+            messages=_for_brain(_starting_with_user(await self._history(including_new=True))),
             effort=choose_effort(user_text),
             context=self._context(),
             tools=self._tools,
@@ -207,8 +216,8 @@ class Conversation:
         if await self._meter.month_total_usd() >= self._budget:
             return
         self._last_brain_call = now
-        # Un mensaje menos que reply(): ahí se suma el mensaje nuevo y el prefijo coincide.
-        history = await self._memory.recent_messages(HISTORY_LIMIT - 1)
+        # La misma ventana que usará reply(), sin el mensaje que aún no llega: el prefijo coincide.
+        history = await self._history(including_new=False)
         request = BrainRequest(
             system=build_system_prompt(await self._memory.facts()),
             messages=_for_brain(_starting_with_user(history)),
@@ -217,6 +226,13 @@ class Conversation:
         usage = await self._brain.prewarm(request)
         if usage:
             await self._meter.record(usage)
+
+    async def _history(self, *, including_new: bool) -> list[Message]:
+        """Los mensajes recientes que ve el cerebro, con el inicio estable (ver HISTORY_STEP)."""
+        stored = await self._memory.message_count()
+        total = stored if including_new else stored + 1
+        window = HISTORY_MIN + total % HISTORY_STEP
+        return await self._memory.recent_messages(window if including_new else window - 1)
 
     async def _save_fact(self, fact: str) -> None:
         if len(fact) > MAX_FACT_CHARS:
