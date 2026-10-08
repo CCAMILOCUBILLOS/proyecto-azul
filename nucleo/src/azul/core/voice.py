@@ -3,7 +3,8 @@
 import asyncio
 import itertools
 import logging
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
 
@@ -76,9 +77,56 @@ class WakeOnly:
     """Modo "Oye Azul": dijeron solo "Oye Azul", sin pedir nada todavía."""
 
 
+@dataclass(frozen=True)
+class OtroDispositivo:
+    """Lo mismo ya lo está respondiendo otro dispositivo (p. ej. el portátil y la app
+    abierta oyeron el mismo "Oye Azul"): este se retira sin responder ni gastar."""
+
+
 VoiceEvent = (
-    Heard | Speech | Stopped | NothingHeard | ListeningEnded | NotForAzul | WakeOnly | ReplyEvent
+    Heard
+    | Speech
+    | Stopped
+    | NothingHeard
+    | ListeningEnded
+    | NotForAzul
+    | WakeOnly
+    | OtroDispositivo
+    | ReplyEvent
 )
+
+# Dos dispositivos que oyen la misma frase empiezan a responder casi a la vez (se midió
+# una diferencia de 53 ms); de otro dispositivo, nadie pregunta algo nuevo tan rápido.
+SEGUNDOS_MISMA_PREGUNTA = 3.0
+# Con estas palabras ya se sabe si es una orden directa (que son cortas).
+PALABRAS_PARA_DECIDIR = 6
+
+
+class Turnero:
+    """Un solo dispositivo responde a cada pregunta: el primero que la oyó."""
+
+    def __init__(
+        self,
+        ventana: float = SEGUNDOS_MISMA_PREGUNTA,
+        reloj: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._ventana = ventana
+        self._reloj = reloj
+        self._ultimo: tuple[object | None, float] = (None, -ventana)
+
+    def tomar(self, origen: object | None) -> bool:
+        ahora = self._reloj()
+        quien, cuando = self._ultimo
+        if (
+            origen is not None
+            and quien is not None
+            and quien is not origen
+            and ahora - cuando < self._ventana
+        ):
+            return False
+        self._ultimo = (origen, ahora)
+        return True
+
 
 _DONE = object()
 
@@ -113,7 +161,10 @@ class VoiceSession:
         no_speech_seconds: float = NO_SPEECH_SECONDS,
         max_listen_seconds: float = MAX_LISTEN_SECONDS,
         no_words_seconds: float = NO_WORDS_SECONDS,
+        parece_orden: Callable[[str], bool] | None = None,
     ) -> None:
+        # Una orden directa no usa a Claude: precalentarlo sería gasto puro (ADR 0042).
+        self._parece_orden = parece_orden or (lambda _: False)
         self._no_words_seconds = no_words_seconds
         self._conversation = conversation
         self._stt = stt
@@ -124,11 +175,19 @@ class VoiceSession:
         self._max_listen_seconds = max_listen_seconds
         self._fillers = itertools.cycle(FILLER_PHRASES)
         self._background: set[asyncio.Task[None]] = set()
+        # Compartido por todas las conexiones: la app, el portátil y el celular.
+        self._turnero = Turnero()
 
-    async def handle(self, audio: AsyncIterator[bytes]) -> AsyncIterator[VoiceEvent]:
-        """Procesa una intervención: desde que se toca el micrófono hasta la respuesta."""
-        # Mientras el usuario habla, la caché del cerebro se va preparando.
-        prewarm = self._start_background(self._prewarm())
+    async def handle(
+        self, audio: AsyncIterator[bytes], origen: object | None = None
+    ) -> AsyncIterator[VoiceEvent]:
+        """Procesa una intervención: desde que se toca el micrófono hasta la respuesta.
+
+        origen: la conexión que la envía, para que un solo dispositivo responda.
+        """
+        # Mientras el usuario habla, la caché del cerebro se va preparando, pero solo
+        # cuando ya se oyó lo bastante para saber que no es una orden directa.
+        prewarm: asyncio.Task[None] | None = None
 
         stop_listening = asyncio.Event()
         heard_something = asyncio.Event()
@@ -148,6 +207,11 @@ class VoiceSession:
                             yield Heard(" ".join(finals), is_final=False)
                         else:
                             yield Heard(" ".join([*finals, item.text]), is_final=False)
+                        if prewarm is None and self._necesita_cerebro(
+                            " ".join(finals if item.is_final else [*finals, item.text]),
+                            item.is_final,
+                        ):
+                            prewarm = self._start_background(self._prewarm())
                     if item.ends_speech and finals and not announced_end:
                         if split_wake_phrase(" ".join(finals)) == "":
                             # Solo dijo "Oye Azul" (llamado oído en el portátil): se sigue
@@ -179,11 +243,13 @@ class VoiceSession:
         if not text:
             yield NothingHeard()
             return
-        async with aclosing(self._answer(text, prewarm)) as events:
+        async with aclosing(self._answer(text, prewarm, origen)) as events:
             async for event in events:
                 yield event
 
-    async def handle_wake(self, audio: AsyncIterator[bytes]) -> AsyncIterator[VoiceEvent]:
+    async def handle_wake(
+        self, audio: AsyncIterator[bytes], origen: object | None = None
+    ) -> AsyncIterator[VoiceEvent]:
         """Un fragmento de voz captado en modo "Oye Azul" (ADR 0025).
 
         La app manda solo los fragmentos con voz y los corta al detectar silencio.
@@ -215,7 +281,7 @@ class VoiceSession:
                             finals.append(item.text)
                         command = split_wake_phrase(heard)
                         if command is not None:
-                            if prewarm is None:
+                            if prewarm is None and self._necesita_cerebro(command, item.is_final):
                                 # Se prepara la caché solo cuando de verdad llaman a Azul.
                                 prewarm = self._start_background(self._prewarm())
                             yield Heard(command, is_final=False)
@@ -248,13 +314,25 @@ class VoiceSession:
         if not command:
             yield WakeOnly()
             return
-        async with aclosing(self._answer(command, prewarm)) as events:
+        async with aclosing(self._answer(command, prewarm, origen)) as events:
             async for event in events:
                 yield event
 
+    def _necesita_cerebro(self, texto: str, final: bool) -> bool:
+        """¿Vale la pena precalentar? Solo si ya se sabe que no es una orden directa:
+        con una frase terminada o con 6 palabras (las órdenes son cortas)."""
+        pregunta = split_wake_phrase(texto) or texto
+        if not final and len(pregunta.split()) < PALABRAS_PARA_DECIDIR:
+            return False
+        return not self._parece_orden(pregunta)
+
     async def _answer(
-        self, text: str, prewarm: asyncio.Task[None] | None
+        self, text: str, prewarm: asyncio.Task[None] | None, origen: object | None = None
     ) -> AsyncIterator[VoiceEvent]:
+        if not self._turnero.tomar(origen):
+            log.info("Turno de voz: ya lo responde otro dispositivo")
+            yield OtroDispositivo()
+            return
         yield Heard(text, is_final=True)
         if is_stop_command(text):
             yield Stopped()

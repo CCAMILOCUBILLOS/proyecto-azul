@@ -14,10 +14,11 @@ export type EventoVoz =
   | { tipo: "gasto"; nivel: "aviso" | "bloqueo"; gastado: number; limite: number }
   | { tipo: "error"; mensaje: string }
   | { tipo: "nada_escuchado" }
+  | { tipo: "otro_dispositivo" }
   | { tipo: "parado" }
   | { tipo: "interrumpido" }
   | { tipo: "no_eres_tu" }
-  | { tipo: "interrupcion_no_disponible" }
+  | { tipo: "interrupcion_no_disponible"; motivo?: string }
   | { tipo: "fin" };
 
 const TASA_DESTINO = 16_000;

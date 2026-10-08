@@ -173,6 +173,14 @@ class ClienteEscritorio:
                 if self.en_conversacion:
                     self._parlante.tono(*TONO_FIN)
                 self._terminar_conversacion()
+            case "otro_dispositivo":
+                # Otro dispositivo (la app abierta, el celular) ya responde lo mismo: este se
+                # retira en silencio, sin tono, para no contestar dos veces.
+                log.info("Lo responde otro dispositivo")
+                self.escuchando = False
+                self.respondiendo = False
+                self.esperando_fragmento = False
+                self._terminar_conversacion()
             case "interrumpido":
                 # Era la voz del usuario: Azul se calla y lo que él dice es el nuevo mensaje.
                 log.info("Interrumpida por la voz del usuario")
@@ -185,6 +193,8 @@ class ClienteEscritorio:
                 self.escuchando = True
             case "no_eres_tu" | "interrupcion_no_disponible":
                 if evento.get("tipo") == "interrupcion_no_disponible":
+                    if evento.get("motivo") == "sin_huella":
+                        log.info("Para interrumpir con la voz, falta enseñarle la voz a Azul")
                     self._interrupcion_disponible = False
                 self._seguir_hablando()
             case "parado":

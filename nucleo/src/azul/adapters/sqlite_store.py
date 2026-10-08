@@ -1,6 +1,7 @@
 """Memoria y medidor de gasto en SQLite: un solo archivo en datos/ (ADR 0009, R1)."""
 
 import asyncio
+import json
 import sqlite3
 from collections.abc import Callable
 from contextlib import closing
@@ -98,6 +99,14 @@ CREATE TABLE IF NOT EXISTS correo_preguntas (
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS correo_estado (clave TEXT PRIMARY KEY, valor TEXT NOT NULL);
+-- Atajos que Azul aprendió para hacer órdenes sin Claude (ADR 0042).
+CREATE TABLE IF NOT EXISTS atajos (
+    frase TEXT PRIMARY KEY,
+    herramienta TEXT NOT NULL,
+    entrada TEXT NOT NULL,
+    usos INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS wa_pendientes (
     id INTEGER PRIMARY KEY,
     contacto TEXT NOT NULL,
@@ -259,6 +268,23 @@ class SqliteStore:
             "UPDATE wa_pendientes SET estado = ? WHERE id = ?", (estado, id_pendiente)
         )
         return Pendiente(*rows[0])
+
+    # --- Atajos de órdenes directas (ADR 0042) ---
+
+    async def atajo_buscar(self, frase: str) -> tuple[str, dict[str, Any]] | None:
+        rows = await self._read("SELECT herramienta, entrada FROM atajos WHERE frase = ?", (frase,))
+        if not rows:
+            return None
+        await self._write("UPDATE atajos SET usos = usos + 1 WHERE frase = ?", (frase,))
+        return str(rows[0][0]), json.loads(rows[0][1])
+
+    async def atajo_guardar(self, frase: str, herramienta: str, entrada: dict[str, Any]) -> None:
+        await self._write(
+            "INSERT INTO atajos (frase, herramienta, entrada, created_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (frase) DO UPDATE SET herramienta = excluded.herramienta, "
+            "entrada = excluded.entrada",
+            (frase, herramienta, json.dumps(entrada, ensure_ascii=False), self._timestamp()),
+        )
 
     # --- Bandeja de correo (ADR 0039) ---
 

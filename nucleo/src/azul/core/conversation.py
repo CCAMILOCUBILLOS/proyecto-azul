@@ -13,6 +13,7 @@ from azul.core.effort import choose_effort
 from azul.core.herramientas_correo import herramientas_correo
 from azul.core.herramientas_documentos import herramienta_habilidades, herramientas_documentos
 from azul.core.notes import FactNotes
+from azul.core.ordenes import RecepcionDeOrdenes
 from azul.core.persona import build_system_prompt
 from azul.core.ports import (
     Brain,
@@ -113,6 +114,8 @@ class Conversation:
         contexto_extra: Callable[[], Awaitable[str]] | None = None,
         # Se llama con cada mensaje del usuario (confirmaciones, ADR 0041).
         al_empezar_turno: Callable[[], None] | None = None,
+        # Órdenes directas: lo conocido se hace sin Claude (ADR 0042).
+        recepcion: RecepcionDeOrdenes | None = None,
         now: Callable[[], datetime] = datetime.now,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -172,10 +175,25 @@ class Conversation:
         self._instrucciones = instrucciones
         self._contexto_extra = contexto_extra
         self._al_empezar_turno = al_empezar_turno
+        self._recepcion = recepcion
+        # Las herramientas que usa Claude en cada turno: así se aprenden atajos.
+        self._llamadas: list[tuple[str, dict[str, Any]]] = []
+        self._tools = [self._registrada(tool) for tool in self._tools]
 
     async def reply(self, user_text: str) -> AsyncIterator[ReplyEvent]:
         if self._al_empezar_turno is not None:
             self._al_empezar_turno()
+        if self._recepcion is not None:
+            directa = await self._recepcion.atender(user_text)
+            if directa is not None:
+                # Una orden conocida: se hizo sin Claude (cero costo) y queda en el historial.
+                await self._memory.add_message(Message("user", user_text))
+                await self._memory.add_message(
+                    Message("assistant", directa, consulted="orden directa")
+                )
+                yield TextChunk(directa)
+                return
+        self._llamadas = []
         spent = await self._meter.month_total_usd()
         if spent >= self._budget:
             yield BudgetNotice("blocked", spent, self._budget)
@@ -229,12 +247,23 @@ class Conversation:
                 await self._memory.add_message(
                     Message("assistant", answer, consulted="; ".join(consulted))
                 )
+        if self._recepcion is not None and answer:
+            await self._recepcion.aprender(user_text, self._llamadas)
 
         spent = await self._meter.month_total_usd()
         if spent >= self._budget:
             yield BudgetNotice("blocked", spent, self._budget)
         elif spent >= self._warning:
             yield BudgetNotice("warning", spent, self._budget)
+
+    def _registrada(self, tool: ToolSpec) -> ToolSpec:
+        async def handler(entrada: dict[str, Any]) -> str:
+            resultado = await tool.handler(entrada)
+            # Solo las que salieron bien: un atajo no debe aprender un error.
+            self._llamadas.append((tool.name, dict(entrada)))
+            return resultado
+
+        return replace(tool, handler=handler)
 
     def nombres_de_herramientas(self) -> list[str]:
         return [tool.name for tool in self._tools]

@@ -51,6 +51,7 @@ from azul.core.conversation import (
     TextChunk,
 )
 from azul.core.herramientas_archivos import Confirmaciones, herramientas_archivos
+from azul.core.ordenes import RecepcionDeOrdenes
 from azul.core.ports import (
     Archivos,
     Brain,
@@ -70,6 +71,7 @@ from azul.core.voice import (
     ListeningEnded,
     NotForAzul,
     NothingHeard,
+    OtroDispositivo,
     Speech,
     Stopped,
     VoiceEvent,
@@ -260,11 +262,21 @@ def create_app(
         partes = [await contexto() for contexto in contextos]
         return "\n\n".join(p for p in partes if p)
 
+    recepcion = (
+        RecepcionDeOrdenes(
+            piezas["red_nacional"],
+            store,
+            itinerario=(lambda: store.bandeja_itinerario(25)) if revisor else None,
+        )
+        if settings.ordenes_directas
+        else None
+    )
     conversation = nueva_conversacion(
         store,
         herramientas_extra=herramientas_extra,
         contexto_extra=contexto_extra if contextos else None,
         al_empezar_turno=confirmaciones.nuevo_turno,
+        recepcion=recepcion,
     )
     if recepcionista is not None:
         recepcionista.conectar(
@@ -274,7 +286,13 @@ def create_app(
             ),
             nueva_conversacion(store).nombres_de_herramientas(),
         )
-    voice = VoiceSession(conversation, stt, tts, meter=store)
+    voice = VoiceSession(
+        conversation,
+        stt,
+        tts,
+        meter=store,
+        parece_orden=recepcion.reconoce if recepcion is not None else None,
+    )
     if verificador is None:
         verificador = cargar_verificador(
             settings.escritorio_modelo_voz,
@@ -492,7 +510,7 @@ async def _voice_connection(
             # Marca el inicio del turno: la app descarta el audio que llegue de turnos anteriores.
             await socket.send_json({"tipo": "turno"})
             handler = voice.handle_wake if wake else voice.handle
-            async with aclosing(handler(chunks())) as events:
+            async with aclosing(handler(chunks(), origen=socket)) as events:
                 async for event in events:
                     if isinstance(event, Speech):
                         await socket.send_bytes(event.audio)
@@ -580,7 +598,11 @@ async def _voice_connection(
             command = json.loads(message.get("text") or "{}").get("tipo")
             if command == "interrupcion_inicio":
                 if verificador is None or not verificador.inscrito:
-                    await socket.send_json({"tipo": "interrupcion_no_disponible"})
+                    # Sin huella no se sabe quién habla, y solo el usuario puede interrumpir.
+                    log.info("Interrupción pedida, pero el usuario no ha enseñado su voz")
+                    await socket.send_json(
+                        {"tipo": "interrupcion_no_disponible", "motivo": "sin_huella"}
+                    )
                     continue
                 await cancel_verification()
                 posible = []
@@ -673,6 +695,8 @@ def _voice_event_to_dict(event: VoiceEvent) -> dict[str, Any]:
             return {"tipo": "ignorado", "con_palabras": had_words}
         case WakeOnly():
             return {"tipo": "activado"}
+        case OtroDispositivo():
+            return {"tipo": "otro_dispositivo"}
         case _:
             return _event_to_dict(event)
 

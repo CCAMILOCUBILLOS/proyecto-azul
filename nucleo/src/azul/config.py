@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     # Con esto, Azul usa ese Outlook en vez del de este equipo.
     correo_remoto_url: str = ""
     correo_remoto_clave: SecretStr | None = None
+    # Órdenes conocidas sin Claude: catálogo y atajos aprendidos (ADR 0042).
+    ordenes_directas: bool = True
     # Editar, organizar y correr Python, solo para el usuario (ADR 0041).
     archivos_activos: bool = True
     archivos_respaldos: Path = Field(default_factory=lambda: _onedrive_dir("Respaldos de archivos"))

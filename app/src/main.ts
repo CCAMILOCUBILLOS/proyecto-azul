@@ -276,6 +276,13 @@ function alEventoDeVoz(evento: EventoVoz): void {
       iniciarConversacion();
       void empezarAHablar();
       break;
+    case "otro_dispositivo":
+      // Otro dispositivo (p. ej. el portátil) ya responde lo mismo: aquí no se responde.
+      respondiendoPorVoz = false;
+      burbujaEscuchada?.remove();
+      burbujaEscuchada = null;
+      terminarConversacion();
+      break;
     case "nada_escuchado":
       respondiendoPorVoz = false;
       burbujaEscuchada?.remove();
@@ -302,7 +309,16 @@ function alEventoDeVoz(evento: EventoVoz): void {
       terminarBurbujaDeVoz(true);
       break;
     case "no_eres_tu":
+      break;
     case "interrupcion_no_disponible":
+      // Sin huella, nadie puede interrumpir (ADR 0036): se explica una sola vez.
+      if (evento.motivo === "sin_huella" && !avisoSinHuella) {
+        avisoSinHuella = true;
+        agregarBurbuja(
+          "aviso",
+          "Para interrumpirme hablando, primero enséñame tu voz: abre la conversación, «Tu voz» y «Enseñarle mi voz».",
+        );
+      }
       break;
     case "parado":
       // Si ya estamos escuchando, es solo la confirmación de que nuestro turno nuevo
@@ -556,6 +572,8 @@ const neurona = elemento<HTMLDivElement>("#neurona");
 let ocultarNeurona: number | undefined;
 // Donde está el cursor sobre el orbe: como la red gira, se vuelve a mirar en cada cuadro.
 let cursor: { x: number; y: number } | null = null;
+// El aviso de que falta la huella de voz sale una sola vez por sesión.
+let avisoSinHuella = false;
 let claveMostrada = "";
 
 function etiquetaDe(senalada: NeuronaSenalada): [string, string] | null {

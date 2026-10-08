@@ -12,8 +12,10 @@ from azul.core.voice import (
     ListeningEnded,
     NotForAzul,
     NothingHeard,
+    OtroDispositivo,
     Speech,
     Stopped,
+    Turnero,
     VoiceSession,
     WakeOnly,
 )
@@ -345,3 +347,58 @@ async def test_only_the_wake_phrase_keeps_listening_for_the_question(store):
 
     assert brain.requests[0].messages[-1].text == "¿Qué hora es?"
     assert events.count(ListeningEnded()) == 1
+
+
+async def test_the_same_question_heard_by_two_devices_is_answered_once(store):
+    # El portátil y la app abierta oyen el mismo "Oye Azul, ¿qué hora es?".
+    stt = FakeSpeechToText([Transcript("¿Qué hora es?", True)])
+    brain = FakeBrain(["Son las seis."])
+    session = make_session(store, brain, stt)
+    portatil, app = object(), object()
+
+    primero = [e async for e in session.handle(audio(b"pcm"), origen=portatil)]
+    segundo = [e async for e in session.handle(audio(b"pcm"), origen=app)]
+
+    assert any(isinstance(e, Speech) for e in primero)
+    assert OtroDispositivo() in segundo
+    assert not any(
+        isinstance(e, (Speech, Heard)) and getattr(e, "is_final", False) for e in segundo
+    )
+    assert len(brain.requests) == 1  # una sola respuesta, un solo gasto
+    assert await store.message_count() == 2  # pregunta y respuesta, sin duplicados
+
+
+def test_the_turn_goes_to_the_first_device_and_frees_up_after_a_moment():
+    ahora = [100.0]
+    turnero = Turnero(ventana=3.0, reloj=lambda: ahora[0])
+    portatil, celular = object(), object()
+
+    assert turnero.tomar(portatil)
+    assert not turnero.tomar(celular)  # la misma pregunta, oída en otro lado
+    assert turnero.tomar(portatil)  # el mismo dispositivo siempre puede seguir
+    ahora[0] += 3.5
+    assert turnero.tomar(celular)  # pasado un momento, es una pregunta nueva
+
+
+async def test_a_direct_order_does_not_warm_up_the_brain(store):
+    brain = FakeBrain(["Listo."])
+    stt = FakeSpeechToText([Transcript("corre", False), Transcript("corre el agendamiento", True)])
+    session = make_session(
+        store, brain, stt, parece_orden=lambda texto: texto.startswith("corre el agendamiento")
+    )
+
+    await collect(session, b"pcm")
+
+    assert brain.prewarms == []  # habría sido gasto puro: la orden no usa a Claude
+
+
+async def test_a_long_question_warms_up_while_it_is_still_being_said(store):
+    brain = FakeBrain(["Claro."])
+    stt = FakeSpeechToText(
+        [Transcript("explícame por qué no cargó la orden de Andrea", False), Transcript("x", True)]
+    )
+    session = make_session(store, brain, stt, parece_orden=lambda texto: False)
+
+    await collect(session, b"pcm")
+
+    assert len(brain.prewarms) == 1

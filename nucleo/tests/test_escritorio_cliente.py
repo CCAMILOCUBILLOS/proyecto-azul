@@ -391,3 +391,15 @@ def test_users_voice_takes_over_and_others_let_azul_continue():
 
     assert cliente.escuchando and cliente.en_conversacion
     assert parlante.detenido >= 1
+
+
+def test_when_another_device_answers_the_laptop_stays_quiet():
+    cliente, parlante, _ = crear()
+    cliente.atajo()
+    cliente.mensaje(evento(tipo="turno"))
+    tonos_antes = list(parlante.tonos)
+
+    cliente.mensaje(evento(tipo="otro_dispositivo"))
+
+    assert not cliente.escuchando and not cliente.respondiendo
+    assert parlante.tonos == tonos_antes  # ni siquiera el tono de cierre

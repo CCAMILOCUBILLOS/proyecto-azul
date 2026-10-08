@@ -135,6 +135,11 @@
 - Búsqueda probada en real: 3 a 5 s, con o sin tildes.
 - ⏳ Falta probar la creación de borradores: el asistente de activación de Office estaba abierto y bloqueaba crear correos.
 
+## Órdenes directas y un solo dispositivo por pregunta (ADR 0042)
+- Órdenes conocidas (Red Nacional, itinerario de correos) sin Claude, con atajos que se aprenden; cargue real con "sí".
+- Turnero: si dos dispositivos oyen lo mismo, responde uno. Interrumpir requiere enseñar la voz (la app lo avisa).
+- ⏳ Pendiente: decidir proveedor de voz (Deepgram Aura-2 es el 92 % del gasto de Deepgram).
+
 ## Archivos y Python en ambos equipos (ADR 0041)
 - Editar (con copia y deshacer), organizar y correr Python en el portátil y en Optometría, solo para el usuario; Python y Papelera con confirmación.
 - ⏳ Falta: actualizar el ayudante en Optometría y probar allá.

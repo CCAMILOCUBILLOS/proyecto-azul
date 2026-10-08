@@ -318,7 +318,10 @@ def test_interrupting_needs_an_enrolled_voice(settings):
 
     with local_client(app).websocket_connect("/api/voz") as socket:
         socket.send_json({"tipo": "interrupcion_inicio"})
-        assert socket.receive_json() == {"tipo": "interrupcion_no_disponible"}
+        assert socket.receive_json() == {
+            "tipo": "interrupcion_no_disponible",
+            "motivo": "sin_huella",
+        }
 
 
 def test_voice_enrollment_endpoints(settings):
