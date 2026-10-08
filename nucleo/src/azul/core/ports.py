@@ -180,6 +180,21 @@ class Documentos(Protocol):
     async def guardar_archivo(self, nombre: str, extension: str, contenido: str) -> str: ...
 
 
+class ArchivosError(Exception):
+    """Fallo al manejar archivos o correr código, con un mensaje apto para el usuario."""
+
+
+class Archivos(Protocol):
+    """Los archivos de un equipo (portátil u Optometría) y correr Python allí (ADR 0041).
+
+    Acciones: listar, buscar, leer, editar, escribir, restaurar, copiar, mover,
+    crear_carpeta, papelera y python. Todo cambio deja copia de seguridad; nada se
+    sobrescribe ni se borra del todo.
+    """
+
+    async def hacer(self, accion: str, entrada: dict[str, Any]) -> dict[str, Any]: ...
+
+
 class CorreoError(Exception):
     """Fallo con el correo, con un mensaje apto para el usuario."""
 

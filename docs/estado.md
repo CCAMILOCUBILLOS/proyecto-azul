@@ -135,6 +135,10 @@
 - Búsqueda probada en real: 3 a 5 s, con o sin tildes.
 - ⏳ Falta probar la creación de borradores: el asistente de activación de Office estaba abierto y bloqueaba crear correos.
 
+## Archivos y Python en ambos equipos (ADR 0041)
+- Editar (con copia y deshacer), organizar y correr Python en el portátil y en Optometría, solo para el usuario; Python y Papelera con confirmación.
+- ⏳ Falta: actualizar el ayudante en Optometría y probar allá.
+
 ## Ayudante de Outlook en Optometría (ADR 0040)
 - El correo real está en Optometría: un ayudante allá maneja su Outlook y Azul (en el portátil) le pide por Tailscale, con clave propia. Probado de punta a punta en el portátil.
 - ⏳ Falta instalarlo en Optometría, publicarlo con Tailscale serve y conectarlo desde el portátil.

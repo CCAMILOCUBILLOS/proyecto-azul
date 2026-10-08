@@ -31,6 +31,7 @@ from azul.core.conversation import (
     TextChunk,
     nombre_de_herramienta,
 )
+from azul.core.herramientas_archivos import SOLO_DEL_USUARIO
 from azul.core.persona import build_system_prompt
 from azul.core.ports import (
     Fact,
@@ -119,9 +120,16 @@ class Recepcionista:
         self._concesiones: set[tuple[str, str]] = set()
         self._ultima_plantilla: datetime | None = None
 
-    def conectar(self, conversacion_dueno: Conversation, fabrica: FabricaDeConversacion) -> None:
+    def conectar(
+        self,
+        conversacion_dueno: Conversation,
+        fabrica: FabricaDeConversacion,
+        herramientas_para_contactos: Sequence[str] = (),
+    ) -> None:
         self._conversacion_dueno = conversacion_dueno
         self._fabrica = fabrica
+        # Las que existen en una conversación con un contacto (para enseñar reglas).
+        self._para_contactos = list(herramientas_para_contactos)
 
     # --- Mensajes que llegan ---
 
@@ -193,6 +201,9 @@ class Recepcionista:
         def envolver(tool: ToolSpec) -> ToolSpec:
             if tool.name in LIBRES:
                 return tool
+            if tool.name in SOLO_DEL_USUARIO:
+                # Archivos y código: nunca a pedido de otra persona, ni con reglas.
+                return replace(tool, handler=_solo_del_usuario)
 
             async def vigilada(entrada: dict[str, Any]) -> str:
                 if (numero, tool.name) in self._concesiones or await self._tiene_regla(
@@ -517,10 +528,11 @@ class Recepcionista:
 
     def _herramientas_para_contactos(self) -> list[str]:
         assert self._conversacion_dueno is not None
+        nombres = self._para_contactos or self._conversacion_dueno.nombres_de_herramientas()
         return [
             n
-            for n in self._conversacion_dueno.nombres_de_herramientas()
-            if not n.startswith("whatsapp_") and n not in LIBRES
+            for n in nombres
+            if not n.startswith("whatsapp_") and n not in LIBRES and n not in SOLO_DEL_USUARIO
         ]
 
     async def _enviar(self, numero: str, texto: str) -> None:
@@ -565,6 +577,10 @@ async def texto_de_respuesta(eventos: AsyncIterator[ReplyEvent]) -> str:
             elif isinstance(evento, BudgetNotice) and evento.level == "blocked":
                 return "Llegué al límite de gasto del mes; no puedo responder hasta el próximo."
     return "".join(partes).strip()
+
+
+async def _solo_del_usuario(entrada: dict[str, Any]) -> str:
+    return "Esto solo lo puede pedir el usuario mismo; con otras personas no está disponible."
 
 
 def _texto_de(mensaje: MensajeEntrante) -> str:

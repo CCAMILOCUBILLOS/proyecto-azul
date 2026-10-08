@@ -42,4 +42,6 @@ def settings(tmp_path) -> Settings:
         backup_cloud_dir=tmp_path / "nube",
         # Las pruebas nunca tocan el Outlook real.
         correo_activo=False,
+        archivos_respaldos=tmp_path / "respaldos-archivos",
+        archivos_trabajo=tmp_path / "trabajo",
     )

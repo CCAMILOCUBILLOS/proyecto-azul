@@ -28,6 +28,7 @@ from azul.access import (
     session_token,
 )
 from azul.adapters.anthropic_brain import AnthropicBrain, UnconfiguredBrain
+from azul.adapters.archivos_equipo import archivos_locales, archivos_remotos
 from azul.adapters.correo_outlook import CorreoOutlook
 from azul.adapters.correo_remoto import ejecutor_remoto
 from azul.adapters.deepgram import DeepgramSpeechToText, DeepgramTextToSpeech, UnconfiguredVoice
@@ -49,7 +50,9 @@ from azul.core.conversation import (
     SearchNotice,
     TextChunk,
 )
+from azul.core.herramientas_archivos import Confirmaciones, herramientas_archivos
 from azul.core.ports import (
+    Archivos,
     Brain,
     Correo,
     Documentos,
@@ -129,6 +132,20 @@ def build_correo(settings: Settings) -> Correo | None:
     if not settings.correo_activo or sys.platform != "win32":
         return None
     return CorreoOutlook(firma=settings.correo_firma)
+
+
+def build_equipos(settings: Settings) -> dict[str, Archivos]:
+    """El portátil y, si el ayudante está conectado, el PC de Optometría (ADR 0041)."""
+    if not settings.archivos_activos:
+        return {}
+    equipos: dict[str, Archivos] = {
+        "portatil": archivos_locales(settings.archivos_respaldos, settings.archivos_trabajo)
+    }
+    if settings.correo_remoto_url and settings.correo_remoto_clave is not None:
+        equipos["optometria"] = archivos_remotos(
+            settings.correo_remoto_url, settings.correo_remoto_clave.get_secret_value()
+        )
+    return equipos
 
 
 def build_whatsapp(settings: Settings) -> WhatsApp | None:
@@ -222,9 +239,16 @@ def create_app(
         if piezas["correo"] is not None
         else None
     )
+    confirmaciones = Confirmaciones()
+    equipos = build_equipos(settings)
     herramientas_extra = [
         *(recepcionista.herramientas_del_dueno() if recepcionista else []),
         *(revisor.herramientas() if revisor else []),
+        *(
+            herramientas_archivos(equipos, confirmaciones, lambda c: conversation.anotar(c))
+            if equipos
+            else []
+        ),
     ]
     contextos = [
         c
@@ -240,6 +264,7 @@ def create_app(
         store,
         herramientas_extra=herramientas_extra,
         contexto_extra=contexto_extra if contextos else None,
+        al_empezar_turno=confirmaciones.nuevo_turno,
     )
     if recepcionista is not None:
         recepcionista.conectar(
@@ -247,6 +272,7 @@ def create_app(
             lambda memoria, envolver, instrucciones: nueva_conversacion(
                 memoria, envolver_herramienta=envolver, instrucciones=instrucciones
             ),
+            nueva_conversacion(store).nombres_de_herramientas(),
         )
     voice = VoiceSession(conversation, stt, tts, meter=store)
     if verificador is None:

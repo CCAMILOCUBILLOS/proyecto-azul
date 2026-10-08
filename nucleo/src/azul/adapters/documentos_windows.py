@@ -27,6 +27,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from pypdf import PdfReader
 
+from azul.adapters.archivos_basicos import parece_secreto
 from azul.core.ports import DocumentosError
 
 log = logging.getLogger(__name__)
@@ -101,11 +102,6 @@ _SALTAR = {
     "perflogs",
 }
 # Nombres que parecen secretos: Azul no los lee aunque se lo pidan.
-_SECRETO = re.compile(r"(^\.env)|key|clave|password|contrase|secret|token|\.pem$|\.pfx$", re.I)
-
-
-def parece_secreto(nombre: str) -> bool:
-    return bool(_SECRETO.search(nombre))
 
 
 class DocumentosWindows:

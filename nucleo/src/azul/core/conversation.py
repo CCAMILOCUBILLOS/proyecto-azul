@@ -111,6 +111,8 @@ class Conversation:
         instrucciones: Callable[[list[Fact], Sequence[Habilidad]], str] = build_system_prompt,
         envolver_herramienta: Callable[[ToolSpec], ToolSpec] | None = None,
         contexto_extra: Callable[[], Awaitable[str]] | None = None,
+        # Se llama con cada mensaje del usuario (confirmaciones, ADR 0041).
+        al_empezar_turno: Callable[[], None] | None = None,
         now: Callable[[], datetime] = datetime.now,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -169,8 +171,11 @@ class Conversation:
             self._tools = [envolver_herramienta(tool) for tool in self._tools]
         self._instrucciones = instrucciones
         self._contexto_extra = contexto_extra
+        self._al_empezar_turno = al_empezar_turno
 
     async def reply(self, user_text: str) -> AsyncIterator[ReplyEvent]:
+        if self._al_empezar_turno is not None:
+            self._al_empezar_turno()
         spent = await self._meter.month_total_usd()
         if spent >= self._budget:
             yield BudgetNotice("blocked", spent, self._budget)
@@ -286,6 +291,10 @@ class Conversation:
             },
         }
 
+    def anotar(self, consultado: str) -> None:
+        """Para herramientas creadas fuera de la conversación."""
+        self._anotar(consultado)
+
     def _anotar(self, consultado: str) -> None:
         # Lo consultado se guarda una vez por respuesta (ADR 0027).
         if consultado not in self._consulted:
@@ -342,6 +351,15 @@ _NOMBRES_DE_HERRAMIENTAS = {
     "whatsapp_contactos": "WhatsApp: contactos y reglas",
     "whatsapp_regla": "WhatsApp: enseñar reglas",
     "whatsapp_olvidar_regla": "WhatsApp: olvidar reglas",
+    "archivos_listar": "Ver carpetas",
+    "archivos_buscar_en": "Buscar archivos (ambos PC)",
+    "archivo_leer_texto": "Leer código y textos",
+    "archivo_editar": "Editar archivos",
+    "archivo_escribir": "Escribir archivos",
+    "archivo_deshacer": "Deshacer cambios",
+    "archivos_organizar": "Organizar archivos",
+    "python_correr": "Correr Python",
+    "accion_confirmar": "Confirmar acciones",
     "red_nacional_consultar": "Red Nacional: consultas",
     "red_nacional_ejecutar": "Red Nacional: procesos",
 }

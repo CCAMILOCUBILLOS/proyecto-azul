@@ -1,9 +1,11 @@
-"""Ayudante de Outlook de Azul, para el PC de Optometría (ADR 0040).
+"""Ayudante de Azul para el PC de Optometría (ADR 0040, 0041).
 
 Azul vive en el portátil; el correo real está en el Outlook de este PC. Este
-programa pequeño atiende los pedidos de Azul (buscar, leer, dejar borradores,
-responder y poner categorías) con los mismos guiones que usa Azul
-(nucleo/src/azul/adapters/outlook_powershell.py). Nunca envía correos.
+programa pequeño atiende los pedidos de Azul con los mismos archivos que usa Azul:
+- /outlook: buscar, leer, dejar borradores, responder y poner categorías
+  (nucleo/src/azul/adapters/outlook_powershell.py). Nunca envía correos.
+- /archivos: listar, buscar, leer, editar (con copia de seguridad en .\\respaldos),
+  organizar y correr Python en .\\trabajo (nucleo/src/azul/adapters/archivos_basicos.py).
 
 - Solo escucha en este equipo (127.0.0.1). Tailscale lo publica dentro de la red
   privada del usuario: tailscale serve --bg --https=8443 http://127.0.0.1:8767
@@ -24,13 +26,14 @@ import os
 import secrets
 import tempfile
 import threading
+from collections import defaultdict
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 AQUI = Path(__file__).resolve().parent
-GUIONES = AQUI.parent / "nucleo" / "src" / "azul" / "adapters" / "outlook_powershell.py"
+ADAPTADORES = AQUI.parent / "nucleo" / "src" / "azul" / "adapters"
 ARCHIVO_CLAVE = AQUI / ".clave"
 PUERTO = int(os.environ.get("AZUL_AYUDANTE_PUERTO", "8767"))
 MAX_BYTES = 32 * 1024 * 1024  # 20 MB de adjuntos, más lo que agranda base64
@@ -40,14 +43,34 @@ LETRAS_DE_CLAVE = "abcdefghjkmnpqrstuvwxyz23456789"
 log = logging.getLogger("ayudante")
 
 
-def cargar_guiones() -> Any:
-    """outlook_powershell.py sin importar el resto de Azul (que aquí no está instalado)."""
-    spec = importlib.util.spec_from_file_location("outlook_powershell", GUIONES)
-    if spec is None or spec.loader is None:
-        raise SystemExit(f"No encuentro los guiones de Outlook en {GUIONES}")
+def cargar(nombre: str) -> Any:
+    """Un archivo de Azul sin importar el resto de Azul (que aquí no está instalado)."""
+    ruta = ADAPTADORES / f"{nombre}.py"
+    spec = importlib.util.spec_from_file_location(nombre, ruta)
+    if spec is None or spec.loader is None or not ruta.exists():
+        raise SystemExit(f"No encuentro {ruta}. ¿Está completa la carpeta de Azul?")
     modulo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(modulo)
     return modulo
+
+
+def servicios_de_este_pc() -> dict[str, tuple[Any, Any, type]]:
+    """Ruta -> (ejecutar, acciones, error) de cada servicio del ayudante."""
+    guiones = cargar("outlook_powershell")
+    archivos = cargar("archivos_basicos")
+    config = {
+        "respaldos": str(AQUI / "respaldos"),
+        "trabajo": str(AQUI / "trabajo"),
+        "raices": archivos.raices_por_defecto(),
+    }
+    return {
+        "/outlook": (guiones.ejecutar, guiones.ACCIONES, guiones.OutlookError),
+        "/archivos": (
+            lambda accion, entrada: archivos.ejecutar(accion, entrada, config),
+            archivos.ACCIONES,
+            archivos.ArchivoError,
+        ),
+    }
 
 
 def obtener_clave() -> str:
@@ -73,15 +96,14 @@ def atender(
     clave_recibida: str,
     cuerpo: bytes,
     clave: str,
-    ejecutar: Callable[[str, dict[str, Any]], dict[str, Any]],
-    acciones: Any,
-    error_de_outlook: type,
+    servicios: dict[str, tuple[Callable[[str, dict[str, Any]], dict[str, Any]], Any, type]],
 ) -> tuple[int, dict[str, Any]]:
     """Un pedido de Azul -> (código HTTP, respuesta). Separado del servidor para probarlo."""
     if metodo == "GET" and ruta == "/salud":
         return 200, {"estado": "ok"}
-    if metodo != "POST" or ruta != "/outlook":
+    if metodo != "POST" or ruta not in servicios:
         return 404, {"error": "No existe."}
+    ejecutar, acciones, error_del_servicio = servicios[ruta]
     if not clave_recibida or not hmac.compare_digest(clave_recibida, clave):
         return 401, {"error": "Clave incorrecta."}
     try:
@@ -100,16 +122,17 @@ def atender(
         except (ValueError, KeyError, TypeError):
             return 400, {"error": "Adjuntos mal formados."}
         try:
-            with _UNO_A_LA_VEZ:
+            # Un pedido a la vez por servicio: un programa largo no frena al correo.
+            with _CANDADOS[ruta]:
                 return 200, ejecutar(accion, entrada)
-        except error_de_outlook as error:
+        except error_del_servicio as error:
             return 422, {"error": str(error)}
         except Exception:
-            log.exception("Fallo inesperado atendiendo '%s'", accion)
-            return 500, {"error": "El ayudante de Outlook falló; quedó en su registro."}
+            log.exception("Fallo inesperado atendiendo '%s %s'", ruta, accion)
+            return 500, {"error": "El ayudante de Optometría falló; quedó en su registro."}
 
 
-_UNO_A_LA_VEZ = threading.Lock()
+_CANDADOS: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
 
 
 def _guardar_archivos(entrada: dict[str, Any], carpeta: Path) -> dict[str, Any]:
@@ -126,7 +149,7 @@ def _guardar_archivos(entrada: dict[str, Any], carpeta: Path) -> dict[str, Any]:
     return entrada
 
 
-def crear_servidor(clave: str, guiones: Any) -> ThreadingHTTPServer:
+def crear_servidor(clave: str, servicios: dict[str, Any]) -> ThreadingHTTPServer:
     class Manejador(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
             self._responder("GET")
@@ -146,9 +169,7 @@ def crear_servidor(clave: str, guiones: Any) -> ThreadingHTTPServer:
                     self.headers.get(CABECERA, ""),
                     cuerpo,
                     clave,
-                    guiones.ejecutar,
-                    guiones.ACCIONES,
-                    guiones.OutlookError,
+                    servicios,
                 )
             salida = json.dumps(datos, ensure_ascii=False).encode("utf-8")
             self.send_response(codigo)
@@ -168,10 +189,10 @@ def main() -> None:
     archivo = logging.FileHandler(str(AQUI / "ayudante.log"), encoding="utf-8")
     archivo.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logging.basicConfig(level=logging.INFO, handlers=[archivo])
-    guiones = cargar_guiones()
+    servicios = servicios_de_este_pc()
     clave = obtener_clave()
-    servidor = crear_servidor(clave, guiones)
-    print(f"Ayudante de Outlook de Azul encendido en http://127.0.0.1:{PUERTO}")
+    servidor = crear_servidor(clave, servicios)
+    print(f"Ayudante de Azul encendido en http://127.0.0.1:{PUERTO} (correo y archivos)")
     print("Déjalo abierto. Para apagarlo, cierra esta ventana.", flush=True)
     log.info("Ayudante encendido")
     servidor.serve_forever()

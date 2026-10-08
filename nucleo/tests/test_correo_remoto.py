@@ -3,7 +3,6 @@ import importlib.util
 import json
 import threading
 from pathlib import Path
-from types import SimpleNamespace
 
 import httpx2
 import pytest
@@ -41,9 +40,13 @@ def atender(cuerpo, clave=CLAVE, ejecutar=None, metodo="POST", ruta="/outlook"):
         clave,
         json.dumps(cuerpo).encode() if isinstance(cuerpo, dict) else cuerpo,
         CLAVE,
-        ejecutar or (lambda accion, entrada: {"accion": accion, "entrada": entrada}),
-        {"buscar": "", "borrador": ""},
-        OutlookError,
+        {
+            "/outlook": (
+                ejecutar or (lambda accion, entrada: {"accion": accion, "entrada": entrada}),
+                {"buscar": "", "borrador": ""},
+                OutlookError,
+            )
+        },
     )
 
 
@@ -159,8 +162,8 @@ async def test_end_to_end_through_a_real_helper_server(monkeypatch):
         return {"correos": [{"id": "1", "asunto": "Hola", "vista": "Texto   largo"}]}
 
     monkeypatch.setattr(ayudante, "PUERTO", 0)
-    guiones = SimpleNamespace(ejecutar=ejecutar, ACCIONES={"buscar": ""}, OutlookError=OutlookError)
-    servidor = ayudante.crear_servidor(CLAVE, guiones)
+    servicios = {"/outlook": (ejecutar, {"buscar": ""}, OutlookError)}
+    servidor = ayudante.crear_servidor(CLAVE, servicios)
     hilo = threading.Thread(target=servidor.serve_forever, daemon=True)
     hilo.start()
     try:
